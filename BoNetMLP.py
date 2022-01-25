@@ -5,16 +5,13 @@ import torch.nn as nn
 import torch
 import numpy as np
 import torch.nn.functional as F
-
-from helper_net import Ops
+from torch import concat
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)  # model
 sys.path.append(os.path.join(ROOT_DIR, 'Pointnet2.PyTorch'))
 
 from pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
-import pointnet2.pointnet2_utils as pointnet2_utils
-import pointnet2.pytorch_utils as pt_utils
 
 negative_slope = 0.2
 
@@ -61,11 +58,10 @@ class backbone_pointnet2(nn.Module):
         sem3 = F.conv2d(sem2, torch.rand(1, 1, 128, 13), torch.rand(13), stride=1, padding=1)
         # TODO points_num ?
         # sem3 = torch.reshape(sem3, [-1, points_num, self.sem_num])
-        sem3 = torch.reshape(sem3, [-1, self.sem_num])
-        self.y_psem_logits = sem3
-        y_sem_pred = F.softmax(self.y_psem_logits)
+        sem4 = torch.reshape(sem3, [-1, 13])
+        y_sem_pred = F.softmax(sem4)
 
-        return point_features, global_features, y_sem_pred
+        return point_features, global_features, y_sem_pred, sem4
 
 
 # 2. bbox
@@ -137,13 +133,7 @@ class pmask_net(nn.Module):
         point_features = point_features.squeeze(-1)
 
         # TODO add bboxscore, TF code is as follows
-        # bbox_info = tf.tile(tf.concat([tf.reshape(bbox, [-1, bb_num, 6]), bboxscore[:,:,None]],axis=-1)[:,:,None,:], [1,1,p_num,1])
-        # pmask0 = tf.tile(point_features[:,None,:,:], [1, bb_num, 1, 1])
-        # pmask0 = tf.concat([pmask0, bbox_info], axis=-1)
-        # pmask0 = tf.reshape(pmask0, [-1, p_num, int(pmask0.shape[-1]), 1])
-        bbox_info = bbox.view(-1, num_box, 6).unsqueeze(-2).repeat(1, 1, p_num, 1)
-
-
+        bbox_info = torch.tile(concat([torch.reshape(bbox, [-1, p_num, 6]), bboxscore[:,:,None]],dim=-1)[:,:,None,:], [1,1,p_num,1])
         pmask0 = point_features.transpose(1, 2).unsqueeze(1).repeat(1, num_box, 1, 1)
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
         pmask0 = pmask0.view(-1, p_num, pmask0.shape[-1], 1)
@@ -157,26 +147,3 @@ class pmask_net(nn.Module):
 
         return pred_mask
 
-
-class BoNetMLP(nn.Module):
-    def __init__(self, *args):
-        super().__init__()
-        for block in args:
-            self._modules[block] = block
-
-    def forward(self, net, GPU='0'):
-        #######   1. define inputs
-        # point cloud channel
-        # self.X_pc = torch.empty(self.points_cc, dtype=torch.float32,  names=('X_pc',))
-        #
-        # # bounding box vertices -> bian kang ding dian ge shu
-        # self.Y_bbvert = torch.zeros([None, self.bb_num, 2, 3], dtype=torch.float32, names=('Y_bbvert',))
-        # # mask shuliang
-        # self.Y_pmask = torch.zeros([None, self.bb_num, None], dtype=torch.float32, names=('Y_pmask',))
-        # # point semantics -> label count
-        # self.Y_psem = torch.zeros([None, None, self.sem_num], dtype=torch.float32, names='Y_psem')
-        # self.is_train = torch.zeros(dtype=torch.bool, names='is_train')
-        # self.lr = torch.zeros(dtype=torch.float32, names='lr')
-        for block in self._modules.values():
-            net = block(net)
-        return net
