@@ -89,13 +89,13 @@ if __name__ == '__main__':
     # some parameters
     batch_size = 4
     num_feature = 128
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    device = 'cpu'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # device = 'cpu'
     epoch = 0
     l_rate = max(0.0005 / (2 ** (epoch // 20)), 0.00001)
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
-    train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True,num_workers=4)
+    train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True)
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
     backbone = backbone.to(device)
@@ -116,13 +116,12 @@ if __name__ == '__main__':
     optimizer = optim.Adam(optim_params)
     for ep in range(0, 51, 1):
         l_rate = max(0.0005 / (2 ** (ep // 20)), 0.00001)
-        # for i, data in enumerate(train_dataloader):
-        i = 0
-        for data in train_dataloader:
+        for i, data in enumerate(train_dataloader):
             optimizer.zero_grad()
-            bat_pc, bat_ins, _, bat_psem_onehot, bat_bbvert, bat_pmask = data
+            bat_pc, _, _, bat_psem_onehot, bat_bbvert, bat_pmask = data
             if torch.cuda.is_available():
-                bat_pc, bat_ins, batch_sem, bat_bbvert, bat_pmask = bat_pc.cuda(), bat_ins.cuda(), _, bat_bbvert.cuda(), bat_pmask.cuda()
+                bat_pc, _, _, bat_bbvert, bat_pmask, bat_psem_onehot = bat_pc.cuda(), _, _, bat_bbvert.cuda(), bat_pmask.cuda(), bat_psem_onehot.cuda()
+            # point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:9])
             point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:3], bat_pc[:, :, 3:9].transpose(1, 2))
 
             y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features)
@@ -152,4 +151,3 @@ if __name__ == '__main__':
             end_2_end_loss = bbvert_loss + bbscore_loss  + pmask_loss + psemce_loss
             end_2_end_loss.backward()
             optimizer.step()
-            i += 1
