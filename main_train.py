@@ -1,7 +1,9 @@
+import torch.utils.data
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 from BoNetMLP import *
+from S3DISDataLoader import S3DISDataset
 from helper_net import Ops
 
 gpu_num = 0
@@ -70,26 +72,30 @@ if __name__ == '__main__':
     # net.build_net()
     #
     # ####
-    from helper_data_s3dis import Data_S3DIS as Data
+    # from helper_data_s3dis import Data_S3DIS as Data
+    from dataset import Data_S3DIS as Data
 
     writer = SummaryWriter('logs')
 
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './data_s3dis/'
+    dataset_path = './Data_S3DIS_bak/'
+    # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=4)
+
     # train(net, data)
 
     # some parameters
     batch_size = 4
     num_feature = 128
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cpu'
     epoch = 0
     l_rate = max(0.0005 / (2 ** (epoch // 20)), 0.00001)
 
-    train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
-
+    # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True,num_workers=4)
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
     backbone = backbone.to(device)
@@ -110,7 +116,9 @@ if __name__ == '__main__':
     optimizer = optim.Adam(optim_params)
     for ep in range(0, 51, 1):
         l_rate = max(0.0005 / (2 ** (ep // 20)), 0.00001)
-        for i, data in enumerate(train_dataloader):
+        # for i, data in enumerate(train_dataloader):
+        i = 0
+        for data in train_dataloader:
             optimizer.zero_grad()
             bat_pc, bat_ins, _, bat_psem_onehot, bat_bbvert, bat_pmask = data
             if torch.cuda.is_available():
@@ -144,3 +152,4 @@ if __name__ == '__main__':
             end_2_end_loss = bbvert_loss + bbscore_loss  + pmask_loss + psemce_loss
             end_2_end_loss.backward()
             optimizer.step()
+            i += 1

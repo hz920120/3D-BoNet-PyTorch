@@ -1,11 +1,9 @@
 import os
-import shutil
 import sys
 import torch.nn as nn
 import torch
 import numpy as np
 import torch.nn.functional as F
-from torch import concat
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)  # model
@@ -94,7 +92,7 @@ class bbox_net(nn.Module):
         points_min = torch.max(bbvert)[-2](0)
         points_max = torch.min(bbvert)[-2](0)
         # bb_center = self.sigmoid(self.fc3_2(b3))
-        y_bbvert_pred = torch.concat([points_min, points_max], dim=-2)
+        y_bbvert_pred = torch.cat([points_min, points_max], dim=-2)
 
         # sub_branch 2
         b4 = F.leaky_relu(self.fc2(b2), negative_slope=negative_slope)
@@ -133,7 +131,7 @@ class pmask_net(nn.Module):
         point_features = point_features.squeeze(-1)
 
         # TODO add bboxscore, TF code is as follows
-        bbox_info = torch.tile(concat([torch.reshape(bbox, [-1, p_num, 6]), bboxscore[:,:,None]],dim=-1)[:,:,None,:], [1,1,p_num,1])
+        bbox_info = torch.tile(torch.cat([torch.reshape(bbox, [-1, p_num, 6]), bboxscore[:,:,None]],dim=-1)[:,:,None,:], [1,1,p_num,1])
         pmask0 = point_features.transpose(1, 2).unsqueeze(1).repeat(1, num_box, 1, 1)
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
         pmask0 = pmask0.view(-1, p_num, pmask0.shape[-1], 1)
