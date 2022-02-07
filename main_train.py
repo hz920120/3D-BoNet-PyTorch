@@ -122,32 +122,42 @@ if __name__ == '__main__':
             if torch.cuda.is_available():
                 bat_pc, _, _, bat_bbvert, bat_pmask, bat_psem_onehot = bat_pc.cuda(), _, _, bat_bbvert.cuda(), bat_pmask.cuda(), bat_psem_onehot.cuda()
             # point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:9])
-            point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:3], bat_pc[:, :, 3:9].transpose(1, 2))
+            point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:3],
+                                                                                  bat_pc[:, :, 3:9].transpose(1, 2))
 
             y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features)
-            # TODO Ops.bbvert_association & Ops.bbscore_association
-            y_bbvert_pred, pred_bborder = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+            # # TODO Ops.bbvert_association & Ops.bbscore_association
+            # y_bbvert_pred, pred_bborder = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+            #                                                      label='use_all_ce_l2_iou')
+            associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
                                                                  label='use_all_ce_l2_iou')
+            hun = Hungarian()
+            pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
+            pred_bborder = Ops.cast(pred_bborder, torch.int32)
+            y_bbvert_pred = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred_raw, pred_bborder)
+
             y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_raw, pred_bborder)
 
             # MCE LOSS
-            psemce_loss = Ops.get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
+            psemce_loss = Ops.get_loss_psem_ce(bat_psem_onehot, y_psem_logits)
 
             # loss bbox
             bbvert_loss, bbvert_loss_l2, bbvert_loss_ce, bbvert_loss_iou = \
                 Ops.get_loss_bbvert(bat_pc, y_bbvert_pred, bat_bbvert, label='use_all_ce_l2_iou')
             bbscore_loss = Ops.get_loss_bbscore(y_bbscore_pred, bat_bbvert)
-            sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss)
-            sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2)
-            sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce)
-            sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou)
-            sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss)
+            # sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss)
+            # sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2)
+            # sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce)
+            # sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou)
+            # sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss)
 
             pred_mask_pred = pmask_net(point_features, global_features, y_bbvert_pred_raw, y_bbscore_pred)
 
             # loss pred_mask
-            pmask_loss = Ops.get_loss_pmask(bat_pc, pred_mask_pred, bat_pmask)
+            # pmask_loss = Ops.get_loss_pmask(bat_pc[:, :, 0:9], pred_mask_pred, bat_pmask)
+            pmask_loss = FocalLoss2(alpha=0.25, gamma=2, reduce=True)
+            ms_loss = pmask_loss(pred_mask_pred, bat_pmask)
 
-            end_2_end_loss = bbvert_loss + bbscore_loss  + pmask_loss + psemce_loss
+            end_2_end_loss = bbvert_loss + bbscore_loss + ms_loss + psemce_loss
             end_2_end_loss.backward()
             optimizer.step()

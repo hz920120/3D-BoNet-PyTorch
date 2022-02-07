@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch
 import numpy as np
 import torch.nn.functional as F
+from scipy.optimize import linear_sum_assignment
+
+from helper_net import Ops
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)  # model
@@ -57,8 +60,8 @@ class backbone_pointnet2(nn.Module):
         sem3 = F.conv2d(sem2, torch.rand(4096, 4096, 1, 4).cuda(), padding=2, stride=5)
         # TODO points_num ?
         # sem3 = torch.reshape(sem3, [-1, points_num, self.sem_num])
-        sem4 = torch.reshape(sem3, [-1, points_num])
-        y_sem_pred = F.softmax(sem4)
+        sem4 = torch.reshape(sem3, [-1, points_num, 13])
+        y_sem_pred = torch.squeeze(F.softmax(sem4), dim=1)
 
         return point_features, global_features, y_sem_pred, sem4
 
@@ -87,14 +90,13 @@ class bbox_net(nn.Module):
         b1 = F.leaky_relu(self.fc1(global_features), negative_slope=negative_slope)
         b2 = F.leaky_relu(self.fc21(b1), negative_slope=negative_slope)
 
-
         # sub_branch 1
         b3 = F.leaky_relu(self.fc22(b2), negative_slope=negative_slope)
         # TODO how to define bbver?
         # bbvert = F.linear(self.fc3(b3), torch.randn(24 * 2 * 3, 24 * 2 * 3))
         bbvert = torch.reshape(self.fc3(b3), [-1, 24, 2, 3])
-        points_min = torch.min(bbvert, dim=-2).values[:,:,None,:]
-        points_max = torch.max(bbvert, dim=-2).values[:,:,None,:]
+        points_min = torch.min(bbvert, dim=-2).values[:, :, None, :]
+        points_max = torch.max(bbvert, dim=-2).values[:, :, None, :]
         # bb_center = self.sigmoid(self.fc3_2(b3))
         y_bbvert_pred = torch.cat([points_min, points_max], dim=-2)
 
@@ -114,7 +116,7 @@ class pmask_net(nn.Module):
         self.conv1 = nn.Conv2d(1, 256, (1, p_f_num))
         self.conv2 = nn.Conv2d(512, 128, (1, 1))
         self.conv3 = nn.Conv2d(128, 128, (1, 1))
-        self.conv4 = nn.Conv2d(1, 64, (1, 134))
+        self.conv4 = nn.Conv2d(1, 64, (1, 135))
         self.conv5 = nn.Conv2d(64, 32, (1, 1))
         self.conv6 = nn.Conv2d(32, 1, (1, 1))
         self.bn1 = nn.BatchNorm2d(128)
@@ -135,7 +137,9 @@ class pmask_net(nn.Module):
         point_features = point_features.squeeze(-1)
 
         # TODO add bboxscore, TF code is as follows
-        bbox_info = torch.tile(torch.cat([torch.reshape(bbox, [-1, p_num, 6]), bboxscore[:,:,None]],dim=-1)[:,:,None,:], [1,1,p_num,1])
+        bbox_info = Ops.tile(
+            torch.cat([torch.reshape(bbox, [-1, num_box, 6]), bboxscore[:, :, None]], dim=-1)[:, :, None, :],
+            [1, 1, p_num, 1])
         pmask0 = point_features.transpose(1, 2).unsqueeze(1).repeat(1, num_box, 1, 1)
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
         pmask0 = pmask0.view(-1, p_num, pmask0.shape[-1], 1)
@@ -149,3 +153,73 @@ class pmask_net(nn.Module):
 
         return pred_mask
 
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2, logits=False, reduce=False, weight=1):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.logits = logits
+        self.reduce = reduce
+        self.weight = weight
+
+    def forward(self, inputs, targets):
+        F_loss = -(targets >= 0.4).float() * self.alpha * ((1. - inputs) ** self.gamma) * torch.log(inputs + 1e-8) \
+                 - (1. - (targets >= 0.4).float()) * (1. - self.alpha) * (inputs ** self.gamma) * torch.log(
+            1. - inputs + 1e-8)
+
+        if self.reduce:
+            return F_loss * 60
+        else:
+            return F_loss * 60
+
+
+class FocalLoss2(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2, logits=False, reduce=False):
+        super(FocalLoss2, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.logits = logits
+        self.reduce = reduce
+
+    def forward(self, inputs, targets):
+        F_loss = -targets * self.alpha * ((1. - inputs) ** self.gamma) * torch.log(inputs + 1e-8) \
+                 - (1. - targets) * (1. - self.alpha) * (inputs ** self.gamma) * torch.log(1. - inputs + 1e-8)
+
+        if self.reduce:
+            return torch.mean(F_loss) * 60
+        else:
+            return F_loss * 60
+
+
+class Hungarian(nn.Module):
+    def __init__(self):
+        super(Hungarian, self).__init__()
+
+    def forward(self, cost, gt_boxes):
+        box_mask = np.array([[0, 0, 0], [0, 0, 0]])
+
+        # return ordering : batch_size x num_instances
+        loss_total = 0.
+        batch_size, num_instances = cost.shape[:2]
+        ordering = np.zeros(shape=[batch_size, num_instances]).astype(np.int32)
+        for idx in range(batch_size):
+            ins_gt_boxes = gt_boxes[idx]
+            ins_count = 0
+            for box in ins_gt_boxes:
+                if np.array_equal(box, box_mask):
+                    break
+                else:
+                    ins_count += 1
+            valid_cost = cost[idx][:ins_count]
+            row_ind, col_ind = linear_sum_assignment(valid_cost.cpu().detach().numpy())
+            unmapped = num_instances - ins_count
+            if unmapped > 0:
+                rest = np.array(range(ins_count, num_instances))
+                row_ind = np.concatenate([row_ind, rest])
+                unmapped_ind = np.array(list(set(range(num_instances)) - set(col_ind)))
+                col_ind = np.concatenate([col_ind, unmapped_ind])
+
+            loss_total += cost[idx][row_ind, col_ind].sum()
+            ordering[idx] = np.reshape(col_ind, [1, -1])
+        return torch.from_numpy(ordering).cuda(), (loss_total / float(batch_size * num_instances))
