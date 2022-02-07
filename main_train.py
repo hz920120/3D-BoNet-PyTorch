@@ -22,44 +22,10 @@ def try_all_gpus():
     return devices if devices else [torch.device('cpu')]
 
 
-# x = torch.ones(2, 3, device=try_gpu())
-# print(x)
-
-# def train(net, data):
-#     for epoch in range(0, 51, 1):
-#         l_rate = max(0.0005/(2**(epoch//20)), 0.00001)
-#
-#         data.shuffle_train_files()
-#         total_train_batch_num = data.total_train_batch_num
-#         print('total train batch num:', total_train_batch_num)
-#
-#
-#         for i in range(total_train_batch_num):
-#             # training
-#             data.
-
-def Get_instance_size(batch_pc, batch_group, bat_bbvert, instance_size):
-    batch_size = batch_pc.shape[0]
-    num_point = batch_pc.shape[1]
-    gt_instance_size = torch.zeros((batch_size, 20)).cuda()
-    for i in range(batch_size):
-        pc = batch_pc[i]
-        pc_group = batch_group[i]
-        pc_sem = batch_sem[i]
-        pc_group_unique = torch.unique(pc_group)
-        pc_bbvert = bat_bbvert[i]
-        idx = -1
-        for ins in pc_group_unique:
-            if ins == -1: continue
-            idx += 1
-            pos = (pc_group == ins).nonzero().squeeze(-1)
-            i_size = (pc_bbvert[ins.long(), 1, :] - pc_bbvert[ins.long(), 0, :]) / 2
-            size_cal = torch.sum(torch.abs(instance_size - i_size), dim=1)
-            size_idx = torch.argmin(size_cal)
-            gt_instance_size[i, ins.long()] = size_idx
-
-    return gt_instance_size
-
+LOG_DIR = './'
+save_model_dir = os.path.join(LOG_DIR, 'checkpoints')
+if not os.path.exists(save_model_dir):
+    os.mkdir(save_model_dir)
 
 if __name__ == '__main__':
 
@@ -73,6 +39,8 @@ if __name__ == '__main__':
     #
     # ####
     # from helper_data_s3dis import Data_S3DIS as Data
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+
     from dataset import Data_S3DIS as Data
 
     writer = SummaryWriter('logs')
@@ -80,9 +48,9 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    data = Data(dataset_path, train_areas, test_areas, train_batch_size=4)
+    data = Data(dataset_path, train_areas, test_areas, train_batch_size=64)
 
     # train(net, data)
 
@@ -158,6 +126,17 @@ if __name__ == '__main__':
             pmask_loss = FocalLoss2(alpha=0.25, gamma=2, reduce=True)
             ms_loss = pmask_loss(pred_mask_pred, bat_pmask)
 
-            end_2_end_loss = bbvert_loss + bbscore_loss + ms_loss + psemce_loss
-            end_2_end_loss.backward()
+            total_loss = bbvert_loss + bbscore_loss + ms_loss + psemce_loss
+            total_loss.backward()
             optimizer.step()
+
+            if i % 10 == 0:
+                print("{}th iteration , loss is : {}".format(i + 1, total_loss))
+                torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
+                torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
+                torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
+
+        if epoch % 5 == 0:
+            torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', epoch))
+            torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', epoch))
+            torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', epoch))

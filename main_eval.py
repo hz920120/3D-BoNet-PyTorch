@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import math
 import copy
 
+from helper_net import Ops
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -137,58 +139,27 @@ class Evaluation:
     # use GT semantic now (for validation)
     @staticmethod
     def ttest(data, result_path, test_batch_size=1):
-        instance_sizes = instance_sizes = [[0.48698184, 0.25347686, 0.42515151], [0.26272924, 0.25347686, 0.42515151],
-                                           [0.26272924, 0.48322966, 0.42515151], [0.07527845, 0.25347686, 0.42515151],
-                                           [0.26272924, 0.06318584, 0.42515151], [0.48698184, 0.06318584, 0.13261693]]
-        instance_size = torch.zeros((6, 3))
-        instance_sizes = np.array(instance_sizes)
-        instance_sizes = torch.tensor(instance_sizes)
-
-        for i in range(6):
-            instance_size[i] = instance_sizes[i]
-
-        instance_size = instance_size.cuda()
-
         # parameter
         num_feature = 128
         max_output_size = 64
-        sem_r = [0.7203796439950349, 0.7207131221782462, 0.5885170061848704, 0.5128741935298844, 0.4952586300180609,
-                 0.5223621057220023, 0.5149795314900565, 0.5569424951871475, 0.28203142679380283, 0.50693605539534474,
-                 0.6076281394604879, 0.40390219984841774, 0.28942431095388824]
         # load trained model
-        from BoNetMLP import backbone_pointnet2, pmask_net, box_center_net, FocalLoss, Multi_Encoding_net, FocalLoss2, \
-            sem, Size_predict_net
-        date = '20200620_085341_Area_5'
-        epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'experiment/%s/checkpoints' % (date))
+        from BoNetMLP import backbone_pointnet2, pmask_net, bbox_net, Hungarian
 
-        model = backbone_pointnet2().cuda()
-        model = torch.nn.DataParallel(model, device_ids=[0, 1])
-        model.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'model_%s.pth' % (epoch_num))))
-        model = model.eval()
+        # date = '20200620_085341_Area_5'
+        # epoch_num = '075'
+        MODEL_PATH = os.path.join(BASE_DIR, 'experiment/%s/checkpoints')
 
-        multi_Encoding_net = Multi_Encoding_net([512, 256, 256], 3,
-                                                [[64, 128, 256], [64, 128, 256], [64, 128, 256]]).cuda()
-        multi_Encoding_net = torch.nn.DataParallel(multi_Encoding_net, device_ids=[0, 1])
-        multi_Encoding_net.load_state_dict(
-            torch.load(os.path.join(MODEL_PATH, 'multi_Encoding_net_model_%s.pth' % (epoch_num))))
-        multi_Encoding_net = multi_Encoding_net.eval()
+        backbone_pointnet2 = backbone_pointnet2().cuda()
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_%s.pth')))
+        backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(num_feature).cuda()
-        pmask_net = torch.nn.DataParallel(pmask_net, device_ids=[0, 1])
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_model_%s.pth' % (epoch_num))))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_%s.pth')))
         pmask_net = pmask_net.eval()
 
-        box_center_net = box_center_net().cuda()
-        box_center_net = torch.nn.DataParallel(box_center_net, device_ids=[0, 1])
-        box_center_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'box_center_net_%s.pth' % (epoch_num))))
-        box_center_net = box_center_net.eval()
-
-        size_predict_net = Size_predict_net([0.25, 0.58, 0.82], [256, 256, 512], 3,
-                                            [[64, 128, 256], [64, 128, 256], [64, 128, 256]]).cuda()
-        size_predict_net = torch.nn.DataParallel(size_predict_net, device_ids=[0, 1])
-        size_predict_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'size_net_%s.pth' % (epoch_num))))
-        size_predict_net = size_predict_net.eval()
+        bbox_net = bbox_net().cuda()
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_%s.pth')))
+        bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
 
@@ -199,105 +170,66 @@ class Evaluation:
         # sems = np.load('/home/andy0826/Bo-net/sem.npy')
         # sems = np.zeros((len(scene_list_dic) , 500 , 4096 , 13))
         idx = 0
-        SCN_semantic_tranform_array = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 
         for scene_name in scene_list_dic:
             SCN_precition_this_scene = []
-
-            f = open(os.path.join(BASE_DIR, './data_s3dis/SCN_prediction/area5', \
-                                  scene_name[7:-3] + '.txt'), 'r')
-
-            for line in f:
-                SCN_precition_this_scene.append(line)
-
-            SCN_precition_this_scene = np.array(SCN_precition_this_scene)
-
-            def look_up_SCN(x):
-                return SCN_precition_this_scene[x]
-
-            def SCN_to_ScanNet(x):
-                return SCN_semantic_tranform_array[int(x)]
+            # todo path
+            f = open(os.path.join(BASE_DIR, './Data_S3DIS/area5', scene_name[7:-3] + '.txt'), 'r')
 
             print('test scene:', scene_name)
             scene_result = {}
             scene_files = scene_list_dic[scene_name]
             for k in range(0, len(scene_files), test_batch_size):
                 t_files = scene_files[k: k + test_batch_size]
-                bat_pc, batch_sem, bat_ins, bat_psem_onehot, bat_bbvert, bat_pmask, bat_pc_indices = data.load_test_next_batch_sq(
-                    bat_files=t_files)
+                bat_pc, batch_sem, bat_ins, bat_psem_onehot, bat_bbvert, bat_pmask, bat_pc_indices = \
+                    data.load_test_next_batch_sq(bat_files=t_files)
                 bat_pc = torch.tensor(bat_pc)
                 bat_pc = bat_pc.cuda()
                 # print( bat_pc_indices)
 
-                point_features, global_features = model(bat_pc[:, :, 0:3],
-                                                        bat_pc[:, :, 3:9].transpose(1, 2).contiguous())
-                # pred_sem = sem_net(point_features)
-                input_bat_pc_indices = copy.deepcopy(bat_pc_indices[0].squeeze(1))
-                input_bat_pc_indices = np.asarray(input_bat_pc_indices, dtype=np.int32)
-                SCN_pred_raw = list(map(look_up_SCN, input_bat_pc_indices))
-                sem_pred = list(map(SCN_to_ScanNet, SCN_pred_raw))
-                pred_sem = np.array(sem_pred)
+                point_features, global_features, y_sem_pred, y_psem_logits = backbone_pointnet2(bat_pc[:, :, 0:3],
+                                                                                      bat_pc[:, :, 3:9].transpose(1, 2))
 
-                # pred_sem = sems[idx][k]
+                y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features, point_features).squeeze(-1)
 
-                bbox_center = box_center_net(global_features, point_features).squeeze(-1)
-
-                predict_instance_idx = Get_instance_idx(bbox_center, max_output_size, bat_pc, pred_sem, sem_r)
-
-                if predict_instance_idx.shape[0] == 0:
-                    predict_instance_idx = torch.topk(bbox_center, 1, dim=1)[1].squeeze(0)
-
-                sidx = predict_instance_idx.view(1, -1).detach()
-                ins_center = bat_pc[0, sidx.squeeze(0), 0:3].view(1, -1, 3)
-                size = size_predict_net(bat_pc[:, :, :3], bat_pc[:, :, 3:9], global_features, sidx, 0)
-                radius_idx = torch.max(size, dim=-1)[1]
-                radius = instance_size[radius_idx]
-                radius_size = torch.sqrt(torch.sum(radius ** 2, dim=-1)).unsqueeze(-1)
-                pre_bbox = multi_Encoding_net(bat_pc[:, :, :3], bat_pc[:, :, 3:9], global_features, sidx, 0,
-                                              radius_size * 1.5)
-                pre_box_center = torch.mean((pre_bbox), dim=-2)
-                pre_box_len = pre_bbox[:, :, 1, :] - pre_bbox[:, :, 0, :]
-                pre_box = torch.cat((pre_box_center, pre_box_len), dim=-1)
-
+                # predict score
+                associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+                                                                     label='use_all_ce_l2_iou')
+                hun = Hungarian()
+                pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
+                pred_bborder = Ops.cast(pred_bborder, torch.int32)
+                y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_raw, pred_bborder)
                 # predict mask
-                pre_mask = pmask_net(point_features, global_features, pre_bbox)
+                pre_mask = pmask_net(point_features, global_features, y_bbvert_pred_raw, y_bbscore_pred)
 
                 ####################################
-
-                # predict score, bbox and mask
-                scores = bbox_center[0, predict_instance_idx.long()]
-                new_bbox_score = scores.view(test_batch_size, -1,
-                                             1)  # [B, new_detection_num] -> mask_prediction_model need batch_size arg
-                new_bbox = pre_bbox  # [B, new_detection_num, 6]
+                # bbox and mask
+                new_bbox_score = y_bbscore_pred.view(test_batch_size, -1, 1)
                 new_mask = pre_mask
 
                 ###
-                new_bbox = new_bbox.view(-1, 2, 3)
-                new_bbox_score = new_bbox_score.squeeze(2)
                 bat_pc = bat_pc.cpu()
+                new_bbox = new_bbox.view(-1, 2, 3)
                 new_bbox = new_bbox.cpu().detach().numpy()
+                new_bbox_score = new_bbox_score.squeeze(2)
                 new_bbox_score = new_bbox_score.cpu().detach().numpy()
                 new_mask = new_mask.cpu().detach().numpy()
-                # predictions = predictions.cpu().detach().numpy()
-                # pred_sem  = pred_sem.cpu().detach().numpy()
 
                 for b in range(len(t_files)):
                     pc = np.asarray(bat_pc[b], dtype=np.float16)
                     sem_gt = np.asarray(batch_sem[b], dtype=np.int16)
                     ins_gt = np.asarray(bat_ins[b], dtype=np.int32)
-                    sem_pred_raw = np.asarray(pred_sem[b], dtype=np.float16)  # replace with GT
-                    bbvert_pred_raw = np.asarray(new_bbox[b], dtype=np.float16)
+                    sem_pred_raw = np.asarray(y_psem_logits[b], dtype=np.float16)  # replace with GT
+                    bbvert_pred_raw = np.asarray(y_bbvert_pred_raw[b], dtype=np.float16)
                     bbscore_pred_raw = np.asarray(new_bbox_score[b], dtype=np.float16)
                     pmask_pred_raw = np.asarray(new_mask[b], dtype=np.float16)
-                    pc_indices_raw = np.asarray(bat_pc_indices[b], dtype=np.int32)
 
                     block_name = t_files[b][-len('0000'):]
                     scene_result['block_' + block_name] = {'pc': pc, 'sem_gt': sem_gt, 'ins_gt': ins_gt,
                                                            'sem_pred_raw': sem_pred_raw,
                                                            'bbvert_pred_raw': bbvert_pred_raw,
                                                            'bbscore_pred_raw': bbscore_pred_raw,
-                                                           'pmask_pred_raw': pmask_pred_raw,
-                                                           'pc_indices_raw': pc_indices_raw}
+                                                           'pmask_pred_raw': pmask_pred_raw}
 
             if len(scene_result) != len(scene_files): print('file testing error'); exit()
             if not os.path.exists(result_path + 'res_by_scene/'): os.makedirs(result_path + 'res_by_scene/')
@@ -318,42 +250,19 @@ class Evaluation:
             TP_FP_Total[sem_id]['Total'] = 0
 
         res_scenes = sorted(os.listdir(result_path + 'res_by_scene/'))
-        # add SCN
-        USE_SCN = True
-        SCN_semantic_tranform_array = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-
-        idx = 0
         for scene_name in res_scenes:
-
             print('eval scene', scene_name)
             scene_result = scipy.io.loadmat(result_path + 'res_by_scene/' + scene_name,
                                             verify_compressed_data_integrity=False)
 
-            pc_all = [];
-            ins_gt_all = [];
-            sem_pred_all = [];
+            pc_all = []
+            ins_gt_all = []
+            sem_pred_all = []
             sem_gt_all = []
             gap = 5e-3
             volume_num = int(1. / gap) + 2
             volume = -1 * np.ones([volume_num, volume_num, volume_num]).astype(np.int32)
             volume_sem = -1 * np.ones([volume_num, volume_num, volume_num]).astype(np.int32)
-            SCN_precition_this_scene = []
-
-            if USE_SCN:
-
-                f = open(os.path.join(BASE_DIR, './data_s3dis/SCN_prediction/area5_2', \
-                                      scene_name[7:-7] + '.txt'), 'r')
-
-                for line in f:
-                    SCN_precition_this_scene.append(line)
-
-                SCN_precition_this_scene = np.array(SCN_precition_this_scene)
-
-                def look_up_SCN(x):
-                    return SCN_precition_this_scene[x]
-
-                def SCN_to_ScanNet(x):
-                    return SCN_semantic_tranform_array[int(x)]
 
             for i in range(len(scene_result)):
                 block = 'block_' + str(i).zfill(4)
@@ -361,14 +270,12 @@ class Evaluation:
                 pc = scene_result[block][0]['pc'][0]
                 ins_gt = scene_result[block][0]['ins_gt'][0][0]
                 sem_gt = scene_result[block][0]['sem_gt'][0][0]
+                bbscore_pred_raw = scene_result[block][0]['bbscore_pred_raw'][0][0]
                 pmask_pred_raw = scene_result[block][0]['pmask_pred_raw'][0]
                 sem_pred_raw = scene_result[block][0]['sem_pred_raw'][0]
-                pc_indices_raw = scene_result[block][0]['pc_indices_raw'][0].squeeze(1)
 
-                SCN_pred_raw = list(map(look_up_SCN, pc_indices_raw))
-                sem_pred = list(map(SCN_to_ScanNet, SCN_pred_raw))
-                sem_pred = np.array(sem_pred)
-                pmask_pred = pmask_pred_raw
+                sem_pred = np.argmax(sem_pred_raw, axis=-1)
+                pmask_pred = pmask_pred_raw * np.tile(bbscore_pred_raw[:, None], [1, pmask_pred_raw.shape[-1]])
                 ins_pred = np.argmax(pmask_pred, axis=-2)
                 ins_sem_dic = Eval_Tools.get_sem_for_ins(ins_by_pts=ins_pred, sem_by_pts=sem_pred)
                 Eval_Tools.BlockMerging(volume, volume_sem, pc[:, 6:9], ins_pred, ins_sem_dic, gap)
@@ -386,21 +293,14 @@ class Evaluation:
             pc_xyz_int = (pc_all[:, 6:9] / gap).astype(np.int32)
             ins_pred_all = volume[tuple(pc_xyz_int.T)]
 
-            ### if you need to visulize, please uncomment the follow lines
-            from helper_data_plot import Plot as Plot
-            Plot.draw_pc(np.concatenate([pc_all[:, 9:12], pc_all[:, 3:6]], axis=1), idx)
-            idx += 1
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], idx=idx, pc_semins=ins_gt_all)
-            idx += 1
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], idx=idx, pc_semins=ins_pred_all)
-            idx += 1
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], idx = idx ,pc_semins=sem_gt_all )
-            # idx+=1
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], idx = idx ,pc_semins=sem_pred_all)
-            # idx+=1
-
-            # if idx > 100 : break
-            ##
+            #### if you need to visulize, please uncomment the follow lines
+            # from helper_data_plot import Plot as Plot
+            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
+            ####
 
             ###################
             # pred ins
