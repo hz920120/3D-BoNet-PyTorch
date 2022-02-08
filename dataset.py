@@ -75,21 +75,11 @@ class Data_S3DIS:
         fin = h5py.File(file_path, 'r')
         coords = fin['coords'][block_id]
         points = fin['points'][block_id]
-        semIns_labels = fin['labels'][block_id] # [4096, 2]
-        # pc_indices = fin['pc_indices'][block_id][0] # [4096]
+        semIns_labels = fin['labels'][block_id]
 
-
-        pc = np.concatenate([coords, points[:,3:9]], axis=-1)
-        sem_labels = semIns_labels[:,0]
-        ins_labels = semIns_labels[:,1]
-
-        count = -1
-        unique_ins = np.unique(ins_labels)
-
-        for ins_ind in unique_ins:
-            if ins_ind <= -1: continue
-            count += 1
-            ins_labels[ins_labels == ins_ind] = count 
+        pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
+        sem_labels = semIns_labels[:, 0]
+        ins_labels = semIns_labels[:, 1]
 
         ## if u need to visulize data, uncomment the following lines
         # from helper_data_plot import Plot as Plot

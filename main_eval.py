@@ -111,7 +111,7 @@ class Eval_Tools:
             files = sorted(glob.glob(dataset_path + a + '*.h5'))
             for file_path in files:
                 fin = h5py.File(file_path, 'r')
-                semIns_labels = fin['semIns_labels'][:].reshape([-1, 2])
+                semIns_labels = fin['labels'][:].reshape([-1, 2])
                 ins_labels = semIns_labels[:, 1]
                 sem_labels = semIns_labels[:, 0]
 
@@ -140,6 +140,7 @@ class Evaluation:
     @staticmethod
     def ttest(data, result_path, test_batch_size=1):
         # parameter
+        global _
         num_feature = 128
         max_output_size = 64
         # load trained model
@@ -147,18 +148,18 @@ class Evaluation:
 
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'experiment/%s/checkpoints')
+        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints')
 
-        backbone_pointnet2 = backbone_pointnet2().cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_%s.pth')))
+        backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_010.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(num_feature).cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_%s.pth')))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_010.pth')))
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_%s.pth')))
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_010.pth')))
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -167,62 +168,43 @@ class Evaluation:
         print('total_test_batch_num_sq', len(test_files))
         scene_list_dic = Eval_Tools.get_scene_list(test_files)
 
-        # sems = np.load('/home/andy0826/Bo-net/sem.npy')
-        # sems = np.zeros((len(scene_list_dic) , 500 , 4096 , 13))
-        idx = 0
-
         for scene_name in scene_list_dic:
-            SCN_precition_this_scene = []
             # todo path
-            f = open(os.path.join(BASE_DIR, './Data_S3DIS/area5', scene_name[7:-3] + '.txt'), 'r')
-
             print('test scene:', scene_name)
             scene_result = {}
             scene_files = scene_list_dic[scene_name]
             for k in range(0, len(scene_files), test_batch_size):
                 t_files = scene_files[k: k + test_batch_size]
-                bat_pc, batch_sem, bat_ins, bat_psem_onehot, bat_bbvert, bat_pmask, bat_pc_indices = \
+                bat_pc, bat_sem_gt, bat_ins_gt, bat_psem_onehot, bat_bbvert, bat_pmask, bat_files = \
                     data.load_test_next_batch_sq(bat_files=t_files)
-                bat_pc = torch.tensor(bat_pc)
-                bat_pc = bat_pc.cuda()
-                # print( bat_pc_indices)
+
+                if torch.cuda.is_available():
+                    bat_pc, bat_bbvert, bat_pmask, bat_psem_onehot = \
+                        torch.tensor(bat_pc).cuda(), torch.tensor(bat_bbvert).cuda(), torch.tensor(bat_pmask).cuda(), torch.tensor(bat_psem_onehot).cuda()
 
                 point_features, global_features, y_sem_pred, y_psem_logits = backbone_pointnet2(bat_pc[:, :, 0:3],
                                                                                       bat_pc[:, :, 3:9].transpose(1, 2))
 
-                y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features, point_features).squeeze(-1)
+                y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw = bbox_net(global_features)
 
                 # predict score
-                associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+                associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_sq_raw, bat_bbvert,
                                                                      label='use_all_ce_l2_iou')
                 hun = Hungarian()
                 pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
                 pred_bborder = Ops.cast(pred_bborder, torch.int32)
-                y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_raw, pred_bborder)
+                y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_sq_raw, pred_bborder)
                 # predict mask
-                pre_mask = pmask_net(point_features, global_features, y_bbvert_pred_raw, y_bbscore_pred)
-
-                ####################################
-                # bbox and mask
-                new_bbox_score = y_bbscore_pred.view(test_batch_size, -1, 1)
-                new_mask = pre_mask
-
-                ###
-                bat_pc = bat_pc.cpu()
-                new_bbox = new_bbox.view(-1, 2, 3)
-                new_bbox = new_bbox.cpu().detach().numpy()
-                new_bbox_score = new_bbox_score.squeeze(2)
-                new_bbox_score = new_bbox_score.cpu().detach().numpy()
-                new_mask = new_mask.cpu().detach().numpy()
+                pre_mask = pmask_net(point_features, global_features, y_bbvert_pred_sq_raw, y_bbscore_pred)
 
                 for b in range(len(t_files)):
-                    pc = np.asarray(bat_pc[b], dtype=np.float16)
-                    sem_gt = np.asarray(batch_sem[b], dtype=np.int16)
-                    ins_gt = np.asarray(bat_ins[b], dtype=np.int32)
-                    sem_pred_raw = np.asarray(y_psem_logits[b], dtype=np.float16)  # replace with GT
-                    bbvert_pred_raw = np.asarray(y_bbvert_pred_raw[b], dtype=np.float16)
-                    bbscore_pred_raw = np.asarray(new_bbox_score[b], dtype=np.float16)
-                    pmask_pred_raw = np.asarray(new_mask[b], dtype=np.float16)
+                    pc = np.asarray(bat_pc.cpu().detach()[b], dtype=np.float16)
+                    sem_gt = np.asarray(bat_sem_gt[b], dtype=np.int16)
+                    ins_gt = np.asarray(bat_ins_gt[b], dtype=np.int32)
+                    sem_pred_raw = np.asarray(y_psem_logits.cpu().detach()[b], dtype=np.float16)
+                    bbvert_pred_raw = np.asarray(y_bbvert_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
+                    bbscore_pred_raw = np.asarray(y_bbscore_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
+                    pmask_pred_raw = np.asarray(pre_mask.cpu().detach()[b], dtype=np.float16)
 
                     block_name = t_files[b][-len('0000'):]
                     scene_result['block_' + block_name] = {'pc': pc, 'sem_gt': sem_gt, 'ins_gt': ins_gt,
@@ -234,7 +216,6 @@ class Evaluation:
             if len(scene_result) != len(scene_files): print('file testing error'); exit()
             if not os.path.exists(result_path + 'res_by_scene/'): os.makedirs(result_path + 'res_by_scene/')
             scipy.io.savemat(result_path + 'res_by_scene/' + scene_name + '.mat', scene_result, do_compression=True)
-            idx = idx + 1
 
     @staticmethod
     def evaluation(dataset_path, train_areas, result_path):
@@ -255,9 +236,9 @@ class Evaluation:
             scene_result = scipy.io.loadmat(result_path + 'res_by_scene/' + scene_name,
                                             verify_compressed_data_integrity=False)
 
-            pc_all = []
-            ins_gt_all = []
-            sem_pred_all = []
+            pc_all = [];
+            ins_gt_all = [];
+            sem_pred_all = [];
             sem_gt_all = []
             gap = 5e-3
             volume_num = int(1. / gap) + 2
@@ -371,7 +352,7 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './data_s3dis/'
+    dataset_path = './Data_S3DIS_bak/'
     train_areas = ['Area_1', 'Area_6', 'Area_3', 'Area_2', 'Area_4']
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'

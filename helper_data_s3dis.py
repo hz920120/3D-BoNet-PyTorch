@@ -38,7 +38,7 @@ class Data_S3DIS:
             for f in files:
                 fin = h5py.File(f, 'r')
                 coords = fin['coords'][:]
-                semIns_labels = fin['semIns_labels'][:].reshape([-1, 2])
+                semIns_labels = fin['labels'][:].reshape([-1, 2])
                 ins_labels = semIns_labels[:,1]
                 sem_labels = semIns_labels[:,0]
 
@@ -67,22 +67,19 @@ class Data_S3DIS:
         fin = h5py.File(file_path, 'r')
         coords = fin['coords'][block_id]
         points = fin['points'][block_id]
-        semIns_labels = fin['semIns_labels'][block_id]
-        pc_indices = fin['pc_indices'][block_id] # [4096]
+        semIns_labels = fin['labels'][block_id]
 
-        # I think points[:, 0:3] equals to coords[:]
-        pc = np.concatenate([coords, points[:,3:9]], axis=-1) # [4096, 9] # block xyz, rgb, room xyz
-        sem_labels = semIns_labels[:,0]
-        ins_labels = semIns_labels[:,1]
-        
+        pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
+        sem_labels = semIns_labels[:, 0]
+        ins_labels = semIns_labels[:, 1]
 
         ## if u need to visulize data, uncomment the following lines
-        #from helper_data_plot import Plot as Plot
-        #Plot.draw_pc(pc)
-        #Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
-        #Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+        # from helper_data_plot import Plot as Plot
+        # Plot.draw_pc(pc)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
 
-        return pc, sem_labels, ins_labels, pc_indices
+        return pc, sem_labels, ins_labels
 
     @staticmethod
     def get_bbvert_pmask_labels(pc, ins_labels):
@@ -93,13 +90,14 @@ class Data_S3DIS:
         for ins_ind in unique_ins_labels:
             if ins_ind <= -1: continue
             count += 1
-            if count >= Data_Configs.ins_max_num: print('ignored! more than max instances:', len(unique_ins_labels)); continue
-        
+            if count >= Data_Configs.ins_max_num: print('ignored! more than max instances:',
+                                                        len(unique_ins_labels)); continue
+
             ins_labels_tp = np.zeros(ins_labels.shape, dtype=np.int8)
             ins_labels_tp[ins_labels == ins_ind] = 1
             ins_labels_tp = np.reshape(ins_labels_tp, [-1])
-            gt_pmask[count,:] = ins_labels_tp
-        
+            gt_pmask[count, :] = ins_labels_tp
+
             ins_labels_tp_ind = np.argwhere(ins_labels_tp == 1)
             ins_labels_tp_ind = np.reshape(ins_labels_tp_ind, [-1])
 
@@ -117,21 +115,24 @@ class Data_S3DIS:
 
     @staticmethod
     def load_fixed_points(file_path):
-        pc_xyzrgb, sem_labels, ins_labels, pc_indices = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
+        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
 
         ### center xy within the block
-        min_x = np.min(pc_xyzrgb[:,0]); max_x = np.max(pc_xyzrgb[:,0])
-        min_y = np.min(pc_xyzrgb[:,1]); max_y = np.max(pc_xyzrgb[:,1])
-        min_z = np.min(pc_xyzrgb[:,2]); max_z = np.max(pc_xyzrgb[:,2])
+        min_x = np.min(pc_xyzrgb[:, 0])
+        max_x = np.max(pc_xyzrgb[:, 0])
+        min_y = np.min(pc_xyzrgb[:, 1])
+        max_y = np.max(pc_xyzrgb[:, 1])
+        min_z = np.min(pc_xyzrgb[:, 2])
+        max_z = np.max(pc_xyzrgb[:, 2])
 
-        ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3]) # reserved for final visualization
+        ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3])  # reserved for final visualization
         use_zero_one_center = True
         if use_zero_one_center:
-            pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x)/ np.maximum((max_x - min_x), 1e-3)
-            pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y)/ np.maximum((max_y - min_y), 1e-3)
-            pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z)/ np.maximum((max_z - min_z), 1e-3)
+            pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x) / np.maximum((max_x - min_x), 1e-3)
+            pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y) / np.maximum((max_y - min_y), 1e-3)
+            pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z) / np.maximum((max_z - min_z), 1e-3)
 
-        pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1) #　[4096, 12] # block xyz, rgb, room xyz, normalized block xyz
+        pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1)
 
         ########
         sem_labels = sem_labels.reshape([-1])
@@ -140,11 +141,11 @@ class Data_S3DIS:
 
         psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs.sem_num), dtype=np.int8)
         for idx, s in enumerate(sem_labels):
-            if sem_labels[idx]==-1: continue # invalid points
+            if sem_labels[idx] == -1: continue  # invalid points
             sem_idx = Data_Configs.sem_ids.index(s)
-            psem_onehot_labels[idx, sem_idx] =1
+            psem_onehot_labels[idx, sem_idx] = 1
 
-        return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels, pc_indices
+        return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
 
     # def load_train_next_batch(self):
     #     bat_files = self.train_files[self.train_next_bat_index*self.train_batch_size:(self.train_next_bat_index+1)*self.train_batch_size]
@@ -199,24 +200,23 @@ class Data_S3DIS:
     #     bat_pmask_padded_labels = np.asarray(bat_pmask_padded_labels, dtype=np.float32)
 
     #     return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
-    
+
     def load_test_next_batch_sq(self, bat_files):
-        bat_pc=[]
-        bat_sem_labels=[]
-        bat_ins_labels=[]
-        bat_psem_onehot_labels =[]
-        bat_bbvert_padded_labels=[]
-        bat_pmask_padded_labels =[]
-        bat_pc_indices = []
+        bat_pc = []
+        bat_sem_labels = []
+        bat_ins_labels = []
+        bat_psem_onehot_labels = []
+        bat_bbvert_padded_labels = []
+        bat_pmask_padded_labels = []
         for file in bat_files:
-            pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels, pc_indices = Data_S3DIS.load_fixed_points(file)
+            pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(
+                file)
             bat_pc += [pc]
             bat_sem_labels += [sem_labels]
             bat_ins_labels += [ins_labels]
             bat_psem_onehot_labels += [psem_onehot_labels]
             bat_bbvert_padded_labels += [bbvert_padded_labels]
             bat_pmask_padded_labels += [pmask_padded_labels]
-            bat_pc_indices += [pc_indices]
 
         bat_pc = np.asarray(bat_pc, dtype=np.float32)
         bat_sem_labels = np.asarray(bat_sem_labels, dtype=np.float32)
@@ -224,10 +224,8 @@ class Data_S3DIS:
         bat_psem_onehot_labels = np.asarray(bat_psem_onehot_labels, dtype=np.float32)
         bat_bbvert_padded_labels = np.asarray(bat_bbvert_padded_labels, dtype=np.float32)
         bat_pmask_padded_labels = np.asarray(bat_pmask_padded_labels, dtype=np.float32)
-        bat_pc_indices = np.asarray(bat_pc_indices, dtype=np.float32)
 
-
-        return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels, bat_pc_indices
+        return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels, bat_files
     
     def shuffle_train_files(self, ep):
         index = list(range(len(self.train_files)))
