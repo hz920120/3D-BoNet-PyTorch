@@ -143,7 +143,7 @@ class pmask_net(nn.Module):
         self.lrelu3 = nn.LeakyReLU(negative_slope)
         self.conv3 = nn.Conv2d(128, 128, (1, 1))
         self.lrelu4 = nn.LeakyReLU(negative_slope)
-        self.conv4 = nn.Conv2d(1, 32, (1, 135))
+        self.conv4 = nn.Conv2d(1, 1, (1, 135))
         self.lrelu5 = nn.LeakyReLU(negative_slope)
         # self.conv5 = nn.Conv2d(64, 32, (1, 1))
         # self.lrelu6 = nn.LeakyReLU(negative_slope)
