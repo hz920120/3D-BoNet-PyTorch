@@ -143,11 +143,12 @@ class pmask_net(nn.Module):
         self.lrelu3 = nn.LeakyReLU(negative_slope)
         self.conv3 = nn.Conv2d(128, 128, (1, 1))
         self.lrelu4 = nn.LeakyReLU(negative_slope)
-        self.conv4 = nn.Conv2d(1, 64, (1, 135))
+        self.conv4 = nn.Conv2d(1, 32, (1, 135))
         self.lrelu5 = nn.LeakyReLU(negative_slope)
-        self.conv5 = nn.Conv2d(64, 32, (1, 1))
-        self.lrelu6 = nn.LeakyReLU(negative_slope)
+        # self.conv5 = nn.Conv2d(64, 32, (1, 1))
+        # self.lrelu6 = nn.LeakyReLU(negative_slope)
         self.conv6 = nn.Conv2d(32, 1, (1, 1))
+        self.lrelu7 = nn.LeakyReLU(negative_slope)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, point_features, global_features, bbox, bboxscore):
@@ -159,23 +160,20 @@ class pmask_net(nn.Module):
         point_features = self.lrelu3(self.conv2(point_features))
         point_features = self.lrelu4(self.conv3(point_features))
         point_features = point_features.squeeze(-1)
-
-        # TODO add bboxscore, TF code is as follows
-        bbox_info = Ops.repeat(
-            torch.cat([torch.reshape(bbox, [-1, num_box, 6]), bboxscore[:, :, None]], dim=-1)[:, :, None, :],
-            [1, 1, p_num, 1])
+        #
+        bbox_info = torch.cat([torch.reshape(bbox, [-1, num_box, 6]), bboxscore[:, :, None]], dim=-1)[:, :, None, :].repeat(1, 1, p_num, 1)
         pmask0 = point_features.transpose(1, 2).unsqueeze(1).repeat(1, num_box, 1, 1)
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
         pmask0 = pmask0.reshape(-1, p_num, pmask0.shape[-1], 1)
 
         pmask1 = self.lrelu5(self.conv4(pmask0.permute(0, 3, 1, 2)))
-        pmask2 = self.lrelu6(self.conv5(pmask1))
-        pmask3 = self.conv6(pmask2).permute(0, 2, 3, 1)
-        pmask3 = pmask3.reshape(-1, num_box, p_num)
+        # pmask2 = self.lrelu6(self.conv5(pmask1))
+        pmask3 = self.lrelu7(self.conv6(pmask1)).permute(0, 2, 3, 1)
+        pmask4 = pmask3.reshape(-1, num_box, p_num)
 
-        pred_mask = self.sigmoid(pmask3)
+        y_pmask_logits = self.sigmoid(pmask4)
 
-        return pred_mask
+        return y_pmask_logits
 
 
 class FocalLoss(nn.Module):
