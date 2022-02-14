@@ -14,34 +14,6 @@ from helper_net import Ops
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-def Get_instance_idx(bbox_center, max_output_size, batch_pc, batch_sem, sem_radius):
-    batch_size = bbox_center.shape[0]
-    predict = []
-    batch_sem = torch.Tensor(batch_sem).cuda()
-    batch_sem = batch_sem.int()
-
-    for i in range(batch_size):
-        bat_pc = batch_pc[i]
-        box_center = bbox_center[i]
-
-        for j in range(max_output_size):
-            idx = torch.argmax(box_center).long()
-            sem = batch_sem[idx]
-            if (box_center[idx] <= 0.3):
-                break
-
-            else:
-
-                dist = (torch.sum((bat_pc[idx, 0:3] - bat_pc[:, 0:3]) ** 2, dim=1)) ** 0.5
-                need_zero = (dist <= sem_radius[sem]) & (batch_sem == sem)
-                box_center[need_zero] = 0
-
-                predict.append(idx)
-
-    return torch.tensor(predict)
-
-
 class Eval_Tools:
     @staticmethod
     def get_scene_list(res_blocks):
@@ -140,7 +112,6 @@ class Evaluation:
     @staticmethod
     def ttest(data, result_path, test_batch_size=1):
         # parameter
-        global _
         num_feature = 128
         max_output_size = 64
         # load trained model
@@ -148,18 +119,18 @@ class Evaluation:
 
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints')
+        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021312')
 
         backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_010.pth')))
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_000.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(num_feature).cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_010.pth')))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_000.pth')))
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_010.pth')))
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_000.pth')))
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -169,7 +140,6 @@ class Evaluation:
         scene_list_dic = Eval_Tools.get_scene_list(test_files)
 
         for scene_name in scene_list_dic:
-            # todo path
             print('test scene:', scene_name)
             scene_result = {}
             scene_files = scene_list_dic[scene_name]
@@ -180,31 +150,23 @@ class Evaluation:
 
                 if torch.cuda.is_available():
                     bat_pc, bat_bbvert, bat_pmask, bat_psem_onehot = \
-                        torch.tensor(bat_pc).cuda(), torch.tensor(bat_bbvert).cuda(), torch.tensor(bat_pmask).cuda(), torch.tensor(bat_psem_onehot).cuda()
+                        torch.tensor(bat_pc, device=torch.device('cuda')), torch.tensor(bat_bbvert, device=torch.device('cuda')), torch.tensor(bat_pmask).cuda(), torch.tensor(bat_psem_onehot).cuda()
 
-                point_features, global_features, y_sem_pred, y_psem_logits = backbone_pointnet2(bat_pc[:, :, 0:3],
+                point_features, global_features, y_psem_pred_sq_raw, _ = backbone_pointnet2(bat_pc[:, :, 0:3],
                                                                                       bat_pc[:, :, 3:9].transpose(1, 2))
 
                 y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw = bbox_net(global_features)
 
-                # predict score
-                associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_sq_raw, bat_bbvert,
-                                                                     label='use_all_ce_l2_iou')
-                hun = Hungarian()
-                pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
-                pred_bborder = Ops.cast(pred_bborder, torch.int32)
-                y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_sq_raw, pred_bborder)
-                # predict mask
-                pre_mask = pmask_net(point_features, global_features, y_bbvert_pred_sq_raw, y_bbscore_pred)
+                y_pmask_pred_raw = pmask_net(point_features, global_features, y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw)
 
                 for b in range(len(t_files)):
                     pc = np.asarray(bat_pc.cpu().detach()[b], dtype=np.float16)
                     sem_gt = np.asarray(bat_sem_gt[b], dtype=np.int16)
                     ins_gt = np.asarray(bat_ins_gt[b], dtype=np.int32)
-                    sem_pred_raw = np.asarray(y_psem_logits.cpu().detach()[b], dtype=np.float16)
+                    sem_pred_raw = np.asarray(y_psem_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
                     bbvert_pred_raw = np.asarray(y_bbvert_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
                     bbscore_pred_raw = np.asarray(y_bbscore_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
-                    pmask_pred_raw = np.asarray(pre_mask.cpu().detach()[b], dtype=np.float16)
+                    pmask_pred_raw = np.asarray(y_pmask_pred_raw.cpu().detach()[b], dtype=np.float16)
 
                     block_name = t_files[b][-len('0000'):]
                     scene_result['block_' + block_name] = {'pc': pc, 'sem_gt': sem_gt, 'ins_gt': ins_gt,
@@ -275,12 +237,12 @@ class Evaluation:
             ins_pred_all = volume[tuple(pc_xyz_int.T)]
 
             #### if you need to visulize, please uncomment the follow lines
-            # from helper_data_plot import Plot as Plot
-            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
-            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
+            from helper_data_plot import Plot as Plot
+            Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
+            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
+            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
+            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
             ####
 
             ###################
