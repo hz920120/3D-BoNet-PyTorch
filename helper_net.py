@@ -106,8 +106,8 @@ class Ops:
         ##### get points hard mask in each gt bbox
         gt_bbox_min_xyz = Y_bbvert[:, :, 0, :]
         gt_bbox_max_xyz = Y_bbvert[:, :, 1, :]
-        gt_bbox_min_xyz = Ops.repeat(gt_bbox_min_xyz[:, :, None, :], [1, 1, points_num, 1])
-        gt_bbox_max_xyz = Ops.repeat(gt_bbox_max_xyz[:, :, None, :], [1, 1, points_num, 1])
+        gt_bbox_min_xyz = gt_bbox_min_xyz[:, :, None, :].repeat([1, 1, points_num, 1])
+        gt_bbox_max_xyz = gt_bbox_max_xyz[:, :, None, :].repeat([1, 1, points_num, 1])
         tp1_gt = gt_bbox_min_xyz - points_xyz
         tp2_gt = points_xyz - gt_bbox_max_xyz
         tp_gt = tp1_gt * tp2_gt
