@@ -1,20 +1,15 @@
-import os
-import sys
 import glob
 import numpy as np
 import random
 import copy
 from random import shuffle
 import h5py
-#from helper_data_plot import Plot as Plot
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(BASE_DIR, 'data_s3dis'))
 
 
 class Data_Configs:
     sem_names = ['ceiling', 'floor', 'wall', 'beam', 'column', 'window', 'door',
                  'table', 'chair', 'sofa', 'bookcase', 'board', 'clutter']
-    sem_ids = [0,1,2,3,4,5,6,7,8,9,10,11,12]
+    sem_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     points_cc = 9
     sem_num = len(sem_names)
@@ -23,23 +18,22 @@ class Data_Configs:
     test_pts_num = 4096
 
 
-
 class Data_S3DIS:
     def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4):
         self.root_folder_4_traintest = dataset_path
-        self.train_files = self.load_full_file_list(areas = train_areas)
-        self.test_files = self.load_full_file_list(areas = test_areas)
+        self.train_files = self.load_full_file_list(areas=train_areas)
+        self.test_files = self.load_full_file_list(areas=test_areas)
         print('train files:', len(self.train_files))
         print('test files:', len(self.test_files))
 
         self.ins_max_num = Data_Configs.ins_max_num
         self.train_batch_size = train_batch_size
-        self.total_train_batch_num = len(self.train_files)//self.train_batch_size
+        self.total_train_batch_num = len(self.train_files) // self.train_batch_size
 
         self.train_next_bat_index = 0
 
     def load_full_file_list(self, areas):
-        all_files =[]
+        all_files = []
         for a in areas:
             print('check area:', a)
             files = sorted(glob.glob(self.root_folder_4_traintest + a + '*.h5'))
@@ -47,14 +41,14 @@ class Data_S3DIS:
                 fin = h5py.File(f, 'r')
                 coords = fin['coords'][:]
                 semIns_labels = fin['labels'][:].reshape([-1, 2])
-                ins_labels = semIns_labels[:,1]
-                sem_labels = semIns_labels[:,0]
+                ins_labels = semIns_labels[:, 1]
+                sem_labels = semIns_labels[:, 0]
 
                 data_valid = True
                 ins_idx = np.unique(ins_labels)
                 for i_i in ins_idx:
-                    if i_i<=-1: continue
-                    sem_labels_tp = sem_labels[ins_labels==i_i]
+                    if i_i <= -1: continue
+                    sem_labels_tp = sem_labels[ins_labels == i_i]
                     unique_sem_labels = np.unique(sem_labels_tp)
                     if len(unique_sem_labels) >= 2:
                         print('>= 2 sem for an ins:', f)
@@ -63,7 +57,7 @@ class Data_S3DIS:
                 if not data_valid: continue
                 block_num = coords.shape[0]
                 for b in range(block_num):
-                    all_files.append(f+'_'+str(b).zfill(4))
+                    all_files.append(f + '_' + str(b).zfill(4))
 
         return all_files
 
@@ -98,13 +92,14 @@ class Data_S3DIS:
         for ins_ind in unique_ins_labels:
             if ins_ind <= -1: continue
             count += 1
-            if count >= Data_Configs.ins_max_num: print('ignored! more than max instances:', len(unique_ins_labels)); continue
-        
+            if count >= Data_Configs.ins_max_num: print('ignored! more than max instances:',
+                                                        len(unique_ins_labels)); continue
+
             ins_labels_tp = np.zeros(ins_labels.shape, dtype=np.int8)
             ins_labels_tp[ins_labels == ins_ind] = 1
             ins_labels_tp = np.reshape(ins_labels_tp, [-1])
-            gt_pmask[count,:] = ins_labels_tp
-        
+            gt_pmask[count, :] = ins_labels_tp
+
             ins_labels_tp_ind = np.argwhere(ins_labels_tp == 1)
             ins_labels_tp_ind = np.reshape(ins_labels_tp_ind, [-1])
 
@@ -125,16 +120,19 @@ class Data_S3DIS:
         pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
 
         ### center xy within the block
-        min_x = np.min(pc_xyzrgb[:,0]); max_x = np.max(pc_xyzrgb[:,0])
-        min_y = np.min(pc_xyzrgb[:,1]); max_y = np.max(pc_xyzrgb[:,1])
-        min_z = np.min(pc_xyzrgb[:,2]); max_z = np.max(pc_xyzrgb[:,2])
+        min_x = np.min(pc_xyzrgb[:, 0]);
+        max_x = np.max(pc_xyzrgb[:, 0])
+        min_y = np.min(pc_xyzrgb[:, 1]);
+        max_y = np.max(pc_xyzrgb[:, 1])
+        min_z = np.min(pc_xyzrgb[:, 2]);
+        max_z = np.max(pc_xyzrgb[:, 2])
 
         ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3])  # reserved for final visualization
         use_zero_one_center = True
         if use_zero_one_center:
-            pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x)/ np.maximum((max_x - min_x), 1e-3)
-            pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y)/ np.maximum((max_y - min_y), 1e-3)
-            pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z)/ np.maximum((max_z - min_z), 1e-3)
+            pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x) / np.maximum((max_x - min_x), 1e-3)
+            pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y) / np.maximum((max_y - min_y), 1e-3)
+            pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z) / np.maximum((max_z - min_z), 1e-3)
 
         pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1)
 
@@ -145,28 +143,102 @@ class Data_S3DIS:
 
         psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs.sem_num), dtype=np.int8)
         for idx, s in enumerate(sem_labels):
-            if sem_labels[idx]==-1: continue # invalid points
+            if sem_labels[idx] == -1: continue  # invalid points
             sem_idx = Data_Configs.sem_ids.index(s)
-            psem_onehot_labels[idx, sem_idx] =1
+            psem_onehot_labels[idx, sem_idx] = 1
 
         return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
 
+    def load_train_next_batch(self):
+        bat_files = self.train_files[self.train_next_bat_index * self.train_batch_size:(
+                                                                                                   self.train_next_bat_index + 1) * self.train_batch_size]
+        bat_pc = []
+        bat_sem_labels = []
+        bat_ins_labels = []
+        bat_psem_onehot_labels = []
+        bat_bbvert_padded_labels = []
+        bat_pmask_padded_labels = []
+        for file in bat_files:
+            pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(
+                file)
+            bat_pc.append(pc)
+            bat_sem_labels.append(sem_labels)
+            bat_ins_labels.append(ins_labels)
+            bat_psem_onehot_labels.append(psem_onehot_labels)
+            bat_bbvert_padded_labels.append(bbvert_padded_labels)
+            bat_pmask_padded_labels.append(pmask_padded_labels)
 
-    def __getitem__(self , index):
-        bat_files = self.train_files[index]
-        pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(bat_files)
-        pc = np.asarray(pc, dtype=np.float32)
-        sem_labels = np.asarray(sem_labels, dtype=np.float32)
-        ins_labels = np.asarray(ins_labels, dtype=np.float32)
-        psem_onehot_labels = np.asarray(psem_onehot_labels, dtype=np.float32)
-        bbvert_padded_labels = np.asarray(bbvert_padded_labels, dtype=np.float32)
-        pmask_padded_labels = np.asarray(pmask_padded_labels, dtype=np.float32)
+        bat_pc = np.asarray(bat_pc, dtype=np.float32)
+        bat_sem_labels = np.asarray(bat_sem_labels, dtype=np.float32)
+        bat_ins_labels = np.asarray(bat_ins_labels, dtype=np.float32)
+        bat_psem_onehot_labels = np.asarray(bat_psem_onehot_labels, dtype=np.float32)
+        bat_bbvert_padded_labels = np.asarray(bat_bbvert_padded_labels, dtype=np.float32)
+        bat_pmask_padded_labels = np.asarray(bat_pmask_padded_labels, dtype=np.float32)
 
-        return pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
+        self.train_next_bat_index += 1
+        return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
+    def load_test_next_batch_random(self):
+        idx = random.sample(range(len(self.test_files)), self.train_batch_size)
+        bat_pc = []
+        bat_sem_labels = []
+        bat_ins_labels = []
+        bat_psem_onehot_labels = []
+        bat_bbvert_padded_labels = []
+        bat_pmask_padded_labels = []
+        for i in idx:
+            file = self.test_files[i]
+            pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(
+                file)
+            bat_pc.append(pc)
+            bat_sem_labels.append(sem_labels)
+            bat_ins_labels.append(ins_labels)
+            bat_psem_onehot_labels.append(psem_onehot_labels)
+            bat_bbvert_padded_labels.append(bbvert_padded_labels)
+            bat_pmask_padded_labels.append(pmask_padded_labels)
 
-    
+        bat_pc = np.asarray(bat_pc, dtype=np.float32)
+        bat_sem_labels = np.asarray(bat_sem_labels, dtype=np.float32)
+        bat_ins_labels = np.asarray(bat_ins_labels, dtype=np.float32)
+        bat_psem_onehot_labels = np.asarray(bat_psem_onehot_labels, dtype=np.float32)
+        bat_bbvert_padded_labels = np.asarray(bat_bbvert_padded_labels, dtype=np.float32)
+        bat_pmask_padded_labels = np.asarray(bat_pmask_padded_labels, dtype=np.float32)
 
-    def __len__(self):
-        return len(self.train_files)
+        return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
+    def load_test_next_batch_sq(self, bat_files):
+        bat_pc = []
+        bat_sem_labels = []
+        bat_ins_labels = []
+        bat_psem_onehot_labels = []
+        bat_bbvert_padded_labels = []
+        bat_pmask_padded_labels = []
+        for file in bat_files:
+            pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(
+                file)
+            bat_pc += [pc]
+            bat_sem_labels += [sem_labels]
+            bat_ins_labels += [ins_labels]
+            bat_psem_onehot_labels += [psem_onehot_labels]
+            bat_bbvert_padded_labels += [bbvert_padded_labels]
+            bat_pmask_padded_labels += [pmask_padded_labels]
+
+        bat_pc = np.asarray(bat_pc, dtype=np.float32)
+        bat_sem_labels = np.asarray(bat_sem_labels, dtype=np.float32)
+        bat_ins_labels = np.asarray(bat_ins_labels, dtype=np.float32)
+        bat_psem_onehot_labels = np.asarray(bat_psem_onehot_labels, dtype=np.float32)
+        bat_bbvert_padded_labels = np.asarray(bat_bbvert_padded_labels, dtype=np.float32)
+        bat_pmask_padded_labels = np.asarray(bat_pmask_padded_labels, dtype=np.float32)
+
+        return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels, bat_files
+
+    def shuffle_train_files(self, ep):
+        index = list(range(len(self.train_files)))
+        random.seed(ep)
+        shuffle(index)
+        train_files_new = []
+        for i in index:
+            train_files_new.append(self.train_files[i])
+        self.train_files = train_files_new
+        self.train_next_bat_index = 0
+        print('train files shuffled!')

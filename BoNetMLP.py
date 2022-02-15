@@ -30,25 +30,28 @@ class backbone_pointnet2(nn.Module):
         self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
         self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
         self.is_train = is_train
-        self.conv1 = nn.Conv2d(128, 128, kernel_size=(1, 1))
+        self.conv1 = nn.Conv2d(128, 128, kernel_size=(1, 1), stride=(1, 1))
         self.lrelu1 = nn.LeakyReLU(negative_slope)
         self.conv2 = nn.Conv2d(128, 64, kernel_size=(1, 1), stride=(1, 1))
         self.lrelu2 = nn.LeakyReLU(negative_slope)
-        self.drop = nn.Dropout()
+        self.drop = nn.Dropout(p=0.5)
         self.conv3 = nn.Conv2d(64, 13, kernel_size=(1, 1), stride=(1, 1))
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, xyz, points):
-        points_num = xyz.size()[1]
-        l1_xyz, l1_points = self.sa1(xyz.contiguous(), points)
+    def forward(self, X_pc):
+        points_num = X_pc.size()[1]
+        l0_xyz = X_pc[:, :, 0:3]
+        l0_points = X_pc[:, :, 3:9].transpose(1, 2)
+
+        l1_xyz, l1_points = self.sa1(l0_xyz.contiguous(), l0_points)
         l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
         l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
         l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
         l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
         l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
         l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
-        l0_points = self.fp1(xyz.contiguous(), l1_xyz, torch.cat((xyz.transpose(1, 2), points), dim=1), l1_points)
-        global_features = l4_points.view(-1, 512)
+        l0_points = self.fp1(l0_xyz.contiguous(), l1_xyz, torch.cat((l0_xyz.transpose(1, 2), l0_points), dim=1), l1_points)
+        global_features = torch.reshape(l4_points, [-1, 512])
         l0_points = l0_points.transpose(1, 2)
         point_features = l0_points
 
@@ -59,10 +62,10 @@ class backbone_pointnet2(nn.Module):
         sem2 = self.lrelu2(self.conv2(sem1))
         sem2 = self.drop(sem2)
         sem3 = self.conv3(sem2)
-        sem4 = torch.reshape(sem3.transpose(1, 2), [-1, points_num, 13])
-        y_sem_pred = self.softmax(sem4)
+        y_psem_logits = sem3.squeeze().transpose(1, 2)
+        y_sem_pred = self.softmax(y_psem_logits)
 
-        return point_features, global_features, y_sem_pred, sem4
+        return point_features, global_features, y_sem_pred, y_psem_logits
 
 
 # class backbone_sem(nn.Module):
@@ -117,7 +120,8 @@ class bbox_net(nn.Module):
         b3 = F.leaky_relu(self.fc22(b2), negative_slope=negative_slope)
         # TODO how to define bbver?
         # bbvert = F.linear(self.fc3(b3), torch.randn(24 * 2 * 3, 24 * 2 * 3))
-        bbvert = torch.reshape(self.fc3(b3), [-1, 24, 2, 3])
+        bbvert = self.fc3(b3)
+        bbvert = torch.reshape(bbvert, [-1, 24, 2, 3])
         points_min = torch.min(bbvert, dim=-2).values[:, :, None, :]
         points_max = torch.max(bbvert, dim=-2).values[:, :, None, :]
         # bb_center = self.sigmoid(self.fc3_2(b3))
@@ -130,8 +134,6 @@ class bbox_net(nn.Module):
 
         return y_bbvert_pred, y_bbscore_pred
 
-
-# 3. pmask
 class pmask_net(nn.Module):
     def __init__(self, p_f_num):
         super(pmask_net, self).__init__()
@@ -143,10 +145,10 @@ class pmask_net(nn.Module):
         self.lrelu3 = nn.LeakyReLU(negative_slope)
         self.conv3 = nn.Conv2d(128, 128, (1, 1))
         self.lrelu4 = nn.LeakyReLU(negative_slope)
-        self.conv4 = nn.Conv2d(1, 1, (1, 135))
+        self.conv4 = nn.Conv2d(135, 64, (1, 1))
         self.lrelu5 = nn.LeakyReLU(negative_slope)
-        # self.conv5 = nn.Conv2d(64, 32, (1, 1))
-        # self.lrelu6 = nn.LeakyReLU(negative_slope)
+        self.conv5 = nn.Conv2d(64, 32, (1, 1))
+        self.lrelu6 = nn.LeakyReLU(negative_slope)
         self.conv6 = nn.Conv2d(32, 1, (1, 1))
         self.lrelu7 = nn.LeakyReLU(negative_slope)
         self.sigmoid = nn.Sigmoid()
@@ -166,9 +168,9 @@ class pmask_net(nn.Module):
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
         pmask0 = pmask0.reshape(-1, p_num, pmask0.shape[-1], 1)
 
-        pmask1 = self.lrelu5(self.conv4(pmask0.permute(0, 3, 1, 2)))
-        # pmask2 = self.lrelu6(self.conv5(pmask1))
-        pmask3 = self.lrelu7(self.conv6(pmask1)).permute(0, 2, 3, 1)
+        pmask1 = self.lrelu5(self.conv4(pmask0.permute(0, 2, 3, 1)))
+        pmask2 = self.lrelu6(self.conv5(pmask1))
+        pmask3 = self.lrelu7(self.conv6(pmask2)).permute(0, 2, 3, 1)
         pmask4 = pmask3.reshape(-1, num_box, p_num)
 
         y_pmask_logits = self.sigmoid(pmask4)
@@ -261,8 +263,10 @@ class PsemCeLoss(nn.Module):
         super(PsemCeLoss, self).__init__()
 
     def forward(self, inputs, targets):
-        loss = nn.CrossEntropyLoss(reduction='mean')
-        return loss(inputs, torch.argmax(targets, dim=1))
+        p = torch.softmax(inputs, dim=-1, dtype=torch.float32)
+        h = -targets * torch.log(p)
+        res = torch.sum(h, dim=-1, dtype=torch.float32)
+        return torch.mean(res, dtype=torch.float32)
 
 
 class BbVertLoss(nn.Module):

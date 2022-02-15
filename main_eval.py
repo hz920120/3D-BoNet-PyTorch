@@ -119,18 +119,18 @@ class Evaluation:
 
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021312')
+        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021512')
 
         backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_000.pth')))
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_020.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(num_feature).cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_000.pth')))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_020.pth')))
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_000.pth')))
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_020.pth')))
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -152,8 +152,7 @@ class Evaluation:
                     bat_pc, bat_bbvert, bat_pmask, bat_psem_onehot = \
                         torch.tensor(bat_pc, device=torch.device('cuda')), torch.tensor(bat_bbvert, device=torch.device('cuda')), torch.tensor(bat_pmask).cuda(), torch.tensor(bat_psem_onehot).cuda()
 
-                point_features, global_features, y_psem_pred_sq_raw, _ = backbone_pointnet2(bat_pc[:, :, 0:3],
-                                                                                      bat_pc[:, :, 3:9].transpose(1, 2))
+                point_features, global_features, y_psem_pred_sq_raw, _ = backbone_pointnet2(bat_pc[:, :, 0:9])
 
                 y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw = bbox_net(global_features)
 
