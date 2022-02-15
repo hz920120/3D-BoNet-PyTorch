@@ -1,6 +1,4 @@
-import numpy as np
 import torch
-from scipy.optimize import linear_sum_assignment
 
 
 def cast(x, dtype):
@@ -233,9 +231,10 @@ class Ops:
     ####################################  sem loss
     @staticmethod
     def get_loss_psem_ce(inputs, targets):
-        loss = torch.nn.CrossEntropyLoss(reduction='mean')
-        psemce_loss = loss(inputs, torch.argmax(targets, dim=1))
-        return psemce_loss
+        p = torch.softmax(inputs, dim=-1, dtype=torch.float32)
+        h = -targets * torch.log(p)
+        res = torch.sum(h, dim=-1, dtype=torch.float32)
+        return torch.mean(res, dtype=torch.float32)
 
     ####################################  bbox loss
     @staticmethod
