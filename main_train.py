@@ -71,9 +71,6 @@ if __name__ == '__main__':
     batch_size = 1
     num_feature = 128
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # device = 'cpu'
-    epoch = 0
-    l_rate = max(0.0005 / (2 ** (epoch // 20)), 0.00001)
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
@@ -97,20 +94,23 @@ if __name__ == '__main__':
     pmask_net = pmask_net.to(device)
     count3 = count_parameters(pmask_net)
 
-    print(count1 + count2 + count3)
+    print('parameters total count : {}'.format(count1 + count2 + count3))
 
     optim_params = [
-        {'params': backbone.parameters(), 'lr': l_rate, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': bbox_net.parameters(), 'lr': l_rate, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': pmask_net.parameters(), 'lr': l_rate, 'betas': (0.9, 0.999), 'eps': 1e-08},
+        {'params': backbone.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
+        {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
+        {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
     print('total train batch num:', total_train_batch_num)
     for ep in range(0, 21, 1):
+        for g in optimizer.param_groups:
+            lr = max(0.0005/(2**(ep//20)), 0.00001)
+            g['lr'] = lr
+            print('ep : {}, lr : {}'.format(ep, lr))
         data.shuffle_train_files(ep)
         for i in range(total_train_batch_num):
-
             bat_pc, _, _, bat_psem_onehot, bat_bbvert, bat_pmask = data.load_train_next_batch()
             if torch.cuda.is_available():
                 bat_pc, _, _, bat_bbvert, bat_pmask, bat_psem_onehot = \
@@ -119,16 +119,11 @@ if __name__ == '__main__':
             # point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:9])
             point_features, global_features, _, y_psem_logits = backbone(bat_pc[:, :, 0:9])
 
-            # MCE LOSS
-            # psemce_loss = Ops.get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
-
             get_loss_psem_ce = PsemCeLoss().cuda()
             psemce_loss = get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
 
             y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features)
-            # # TODO Ops.bbvert_association & Ops.bbscore_association
-            # y_bbvert_pred, pred_bborder = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
-            #                                                      label='use_all_ce_l2_iou')
+
             associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
                                                                  label='use_all_ce_l2_iou')
             hun = Hungarian().cuda()
@@ -173,15 +168,20 @@ if __name__ == '__main__':
             current_time = now.strftime("%H:%M:%S")
 
             if i % 10 == 0:
+                print("-----------------------------------------------------------")
+                print('bbvert_loss : {}, bbvert_loss_l2 : {}, bbvert_loss_ce : {}, bbvert_loss_iou: {}'.format(
+                    bbvert_loss, bbvert_loss_l2, bbvert_loss_ce, bbvert_loss_iou
+                ))
+                print("-----------------------------------------------------------")
                 print("time : {}, {} epoch  {}th iteration , loss is : {}".format(current_time,
                                                                                   ep + 1, i, total_loss))
                 print('bbvert_loss: {}, bbscore_loss : {}, ms_loss : {}, psemce_loss : {}'.format(
                     bbvert_loss, bbscore_loss, ms_loss, psemce_loss
                 ))
+                print("-----------------------------------------------------------")
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
-
         if ep % 5 == 0:
             torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
             torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))

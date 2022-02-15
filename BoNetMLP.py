@@ -177,27 +177,6 @@ class pmask_net(nn.Module):
 
         return y_pmask_logits
 
-
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2, logits=False, reduce=False, weight=1):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.logits = logits
-        self.reduce = reduce
-        self.weight = weight
-
-    def forward(self, inputs, targets):
-        F_loss = -(targets >= 0.4).float() * self.alpha * ((1. - inputs) ** self.gamma) * torch.log(inputs + 1e-8) \
-                 - (1. - (targets >= 0.4).float()) * (1. - self.alpha) * (inputs ** self.gamma) * torch.log(
-            1. - inputs + 1e-8)
-
-        if self.reduce:
-            return F_loss * 60
-        else:
-            return F_loss * 60
-
-
 class FocalLoss2(nn.Module):
     def __init__(self, alpha=0.25, gamma=2, logits=False, reduce=False):
         super(FocalLoss2, self).__init__()

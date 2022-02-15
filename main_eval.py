@@ -125,7 +125,7 @@ class Evaluation:
         backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_020.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
-        pmask_net = pmask_net(num_feature).cuda()
+        pmask_net = pmask_net(p_f_num=num_feature).cuda()
         pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_020.pth')))
         pmask_net = pmask_net.eval()
 
@@ -321,5 +321,5 @@ if __name__ == '__main__':
     os.system('rm -rf %s' % (result_path))
 
     data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    Evaluation.ttest(data, result_path, test_batch_size=1)
+    Evaluation.ttest(data, result_path, test_batch_size=4)
     Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
