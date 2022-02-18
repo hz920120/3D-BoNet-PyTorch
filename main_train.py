@@ -56,6 +56,8 @@ if __name__ == '__main__':
     torch.set_num_threads(4)
     from dataset import Data_S3DIS as Data
 
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
     writer = SummaryWriter('logs')
 
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
@@ -74,9 +76,13 @@ if __name__ == '__main__':
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+
+    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021712')
+
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
     backbone = backbone.to(device)
+    # backbone.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_001.pth')))
     count1 = count_parameters(backbone)
 
     # sem
@@ -87,11 +93,13 @@ if __name__ == '__main__':
     # bbox_net
     bbox_net = bbox_net()
     bbox_net = bbox_net.to(device)
+    # bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_001.pth')))
     count2 = count_parameters(bbox_net)
 
     # pmask_net
     pmask_net = pmask_net(p_f_num=num_feature)
     pmask_net = pmask_net.to(device)
+    # pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_001.pth')))
     count3 = count_parameters(pmask_net)
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
@@ -103,13 +111,29 @@ if __name__ == '__main__':
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
+    train_old = True
+    epoch = 0
+    if train_old:
+        check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model.pt'))
+        backbone.load_state_dict(check_point['backbone_state_dict'])
+        backbone.train()
+        bbox_net.load_state_dict(check_point['bbox_state_dict'])
+        bbox_net.train()
+        pmask_net.load_state_dict(check_point['pmask_state_dict'])
+        pmask_net.train()
+        optimizer.load_state_dict(check_point['optimizer_state_dict'])
+        epoch = check_point['epoch']
+        total_loss = check_point['loss']
+        print('load net, epoch : {},  total_loss : {}'.format(epoch, total_loss))
+
     print('total train batch num:', total_train_batch_num)
-    for ep in range(0, 21, 1):
+    for ep in range(epoch, epoch+20, 1):
         for g in optimizer.param_groups:
             lr = max(0.0005/(2**(ep//20)), 0.00001)
             g['lr'] = lr
             print('ep : {}, lr : {}'.format(ep, lr))
         data.shuffle_train_files(ep)
+        total_loss = 0
         for i in range(total_train_batch_num):
             bat_pc, _, _, bat_psem_onehot, bat_bbvert, bat_pmask = data.load_train_next_batch()
             if torch.cuda.is_available():
@@ -186,3 +210,12 @@ if __name__ == '__main__':
             torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
             torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
             torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net_out', ep))
+            PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model.pt')
+            torch.save({
+                'epoch': ep,
+                'backbone_state_dict': backbone.state_dict(),
+                'bbox_state_dict': bbox_net.state_dict(),
+                'pmask_state_dict': pmask_net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': total_loss,
+            }, os.path.join(BASE_DIR, save_model_dir, 'latest_model.pt'))

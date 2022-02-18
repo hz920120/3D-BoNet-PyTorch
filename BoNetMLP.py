@@ -242,9 +242,8 @@ class PsemCeLoss(nn.Module):
         super(PsemCeLoss, self).__init__()
 
     def forward(self, inputs, targets):
-        p = torch.softmax(inputs, dim=-1, dtype=torch.float32)
-        h = -targets * torch.log(p)
-        res = torch.sum(h, dim=-1, dtype=torch.float32)
+        p = -targets * torch.log_softmax(inputs, dim=-1)
+        res = torch.sum(p, dim=-1, dtype=torch.float32)
         return torch.mean(res, dtype=torch.float32)
 
 

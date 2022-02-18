@@ -119,18 +119,18 @@ class Evaluation:
 
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021512')
+        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021712')
 
         backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_020.pth')))
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_045.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(p_f_num=num_feature).cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_020.pth')))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_045.pth')))
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_020.pth')))
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_045.pth')))
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -313,9 +313,9 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_bak/'
-    train_areas = ['Area_1', 'Area_6', 'Area_3', 'Area_2', 'Area_4']
-    test_areas = ['Area_5']
+    dataset_path = './Data_S3DIS_test/'
+    train_areas = ['Area_1', 'Area_6', 'Area_3', 'Area_5', 'Area_4']
+    test_areas = ['Area_2']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     os.system('rm -rf %s' % (result_path))
