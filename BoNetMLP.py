@@ -62,7 +62,7 @@ class backbone_pointnet2(nn.Module):
         sem2 = self.lrelu2(self.conv2(sem1))
         sem2 = self.drop(sem2)
         sem3 = self.conv3(sem2)
-        y_psem_logits = sem3.squeeze().transpose(1, 2)
+        y_psem_logits = sem3.squeeze(-2).transpose(1, 2)
         y_sem_pred = self.softmax(y_psem_logits)
 
         return point_features, global_features, y_sem_pred, y_psem_logits
