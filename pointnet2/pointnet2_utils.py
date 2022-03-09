@@ -32,7 +32,6 @@ class FurthestPointSampling(Function):
     def backward(xyz, a=None):
         return None, None
 
-
 furthest_point_sample = FurthestPointSampling.apply
 
 
