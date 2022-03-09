@@ -119,18 +119,18 @@ class Evaluation:
 
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021712')
+        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022800')
 
         backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_045.pth')))
+        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_130.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net(p_f_num=num_feature).cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_045.pth')))
+        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_130.pth')))
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_045.pth')))
+        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_130.pth')))
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -197,9 +197,13 @@ class Evaluation:
             scene_result = scipy.io.loadmat(result_path + 'res_by_scene/' + scene_name,
                                             verify_compressed_data_integrity=False)
 
+            # point cloud all
             pc_all = [];
+            # ground truth
             ins_gt_all = [];
+            # segment predict all
             sem_pred_all = [];
+            # segment ground truth all
             sem_gt_all = []
             gap = 5e-3
             volume_num = int(1. / gap) + 2
@@ -236,12 +240,12 @@ class Evaluation:
             ins_pred_all = volume[tuple(pc_xyz_int.T)]
 
             #### if you need to visulize, please uncomment the follow lines
-            from helper_data_plot import Plot as Plot
-            Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
+            # from helper_data_plot import Plot as Plot
+            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
             ####
 
             ###################
@@ -313,9 +317,9 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_test/'
-    train_areas = ['Area_1', 'Area_6', 'Area_3', 'Area_5', 'Area_4']
-    test_areas = ['Area_2']
+    dataset_path = './Data_S3DIS/'
+    train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_5', 'Area_4']
+    test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     os.system('rm -rf %s' % (result_path))

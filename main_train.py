@@ -63,9 +63,9 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    data = Data(dataset_path, train_areas, test_areas, train_batch_size=4)
+    data = Data(dataset_path, train_areas, test_areas, train_batch_size=16)
 
     # train(net, data)
 
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
-    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022021712')
+    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022700')
 
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         print('load net, epoch : {},  total_loss : {}'.format(epoch, total_loss))
 
     print('total train batch num:', total_train_batch_num)
-    for ep in range(epoch, epoch+20, 1):
+    for ep in range(epoch, epoch+51, 1):
         for g in optimizer.param_groups:
             lr = max(0.0005/(2**(ep//20)), 0.00001)
             g['lr'] = lr
