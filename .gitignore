@@ -139,4 +139,5 @@ dmypy.json
 cython_debug/
 
 ./data_s3dis
-./.idea
+/.idea
+./data
