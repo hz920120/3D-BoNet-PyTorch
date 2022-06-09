@@ -65,7 +65,7 @@ if __name__ == '__main__':
     #
     dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size=8
+    batch_size = 14
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)

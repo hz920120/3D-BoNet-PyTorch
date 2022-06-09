@@ -116,80 +116,81 @@ class Ops:
 
     @staticmethod
     def bbvert_association(X_pc, y_bbvert_pred, Y_bbvert, label='', device='cpu'):
-        points_num = X_pc.shape[1]
-        bbnum = int(y_bbvert_pred.shape[1])
-        points_xyz = X_pc[:, :, 0:3]
-        points_xyz = points_xyz[:, None, :, :].repeat(1, bbnum, 1, 1)
+        with torch.no_grad():
+            points_num = X_pc.shape[1]
+            bbnum = int(y_bbvert_pred.shape[1])
+            points_xyz = X_pc[:, :, 0:3]
+            points_xyz = points_xyz[:, None, :, :].repeat(1, bbnum, 1, 1)
 
-        ##### get points hard mask in each gt bbox
-        gt_bbox_min_xyz = Y_bbvert[:, :, 0, :]
-        gt_bbox_max_xyz = Y_bbvert[:, :, 1, :]
-        gt_bbox_min_xyz = gt_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
-        gt_bbox_max_xyz = gt_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
-        tp1_gt = gt_bbox_min_xyz - points_xyz
-        tp2_gt = points_xyz - gt_bbox_max_xyz
-        tp_gt = tp1_gt * tp2_gt
-        points_in_gt_bbox_prob = torch.eq(torch.mean(torch.gt(tp_gt, 0.0).float(), dim=-1), 1.0).float()  # B,H,N
+            ##### get points hard mask in each gt bbox
+            gt_bbox_min_xyz = Y_bbvert[:, :, 0, :]
+            gt_bbox_max_xyz = Y_bbvert[:, :, 1, :]
+            gt_bbox_min_xyz = gt_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+            gt_bbox_max_xyz = gt_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+            tp1_gt = gt_bbox_min_xyz - points_xyz
+            tp2_gt = points_xyz - gt_bbox_max_xyz
+            tp_gt = tp1_gt * tp2_gt
+            points_in_gt_bbox_prob = torch.eq(torch.mean(torch.gt(tp_gt, 0.0).float(), dim=-1), 1.0).float()  # B,H,N
 
-        ##### get points soft mask in each pred bbox ---> Algorithm 1
-        pred_bbox_min_xyz = y_bbvert_pred[:, :, 0, :]
-        pred_bbox_max_xyz = y_bbvert_pred[:, :, 1, :]
-        pred_bbox_min_xyz = pred_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
-        pred_bbox_max_xyz = pred_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
-        tp1_pred = pred_bbox_min_xyz - points_xyz
-        tp2_pred = points_xyz - pred_bbox_max_xyz
-        tp_pred = 100 * tp1_pred * tp2_pred
+            ##### get points soft mask in each pred bbox ---> Algorithm 1
+            pred_bbox_min_xyz = y_bbvert_pred[:, :, 0, :]
+            pred_bbox_max_xyz = y_bbvert_pred[:, :, 1, :]
+            pred_bbox_min_xyz = pred_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+            pred_bbox_max_xyz = pred_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+            tp1_pred = pred_bbox_min_xyz - points_xyz
+            tp2_pred = points_xyz - pred_bbox_max_xyz
+            tp_pred = 100 * tp1_pred * tp2_pred
 
-        tp_pred[tp_pred >= 20.0] = 20.0
-        tp_pred[tp_pred <= -20.0] = -20.0
+            tp_pred[tp_pred >= 20.0] = 20.0
+            tp_pred[tp_pred <= -20.0] = -20.0
 
-        points_in_pred_bbox_prob = 1.0 / (1.0 + torch.exp(-1.0 * tp_pred))
-        points_in_pred_bbox_prob = torch.min(points_in_pred_bbox_prob, dim=-1)[0]  # B,H,N
+            points_in_pred_bbox_prob = 1.0 / (1.0 + torch.exp(-1.0 * tp_pred))
+            points_in_pred_bbox_prob = torch.min(points_in_pred_bbox_prob, dim=-1)[0]  # B,H,N
 
-        ##### get bbox cross entropy scores
-        prob_gt = points_in_gt_bbox_prob[:, :, None, :].repeat(1, 1, bbnum, 1)
-        prob_pred = points_in_pred_bbox_prob[:, None, :, :].repeat(1, bbnum, 1, 1)
+            ##### get bbox cross entropy scores
+            prob_gt = points_in_gt_bbox_prob[:, :, None, :].repeat(1, 1, bbnum, 1)
+            prob_pred = points_in_pred_bbox_prob[:, None, :, :].repeat(1, bbnum, 1, 1)
 
-        ce_scores_matrix = - prob_gt * torch.log(prob_pred + 1e-8) - (1 - prob_gt) * torch.log(1 - prob_pred + 1e-8)
-        ce_scores_matrix = torch.mean(ce_scores_matrix, dim=-1)
+            ce_scores_matrix = - prob_gt * torch.log(prob_pred + 1e-8) - (1 - prob_gt) * torch.log(1 - prob_pred + 1e-8)
+            ce_scores_matrix = torch.mean(ce_scores_matrix, dim=-1)
 
-        ##### get bbox soft IOU
-        TP = torch.sum(prob_gt * prob_pred, dim=-1)
-        FP = torch.sum(prob_pred, dim=-1) - TP
-        FN = torch.sum(prob_gt, dim=-1) - TP
-        iou_scores_matrix = TP / (TP + FP + FN + 1e-6)
-        # iou_scores_matrix = 1.0/iou_scores_matrix  # bad, don't use
-        iou_scores_matrix = -1.0 * iou_scores_matrix  # to minimize
+            ##### get bbox soft IOU
+            TP = torch.sum(prob_gt * prob_pred, dim=-1)
+            FP = torch.sum(prob_pred, dim=-1) - TP
+            FN = torch.sum(prob_gt, dim=-1) - TP
+            iou_scores_matrix = TP / (TP + FP + FN + 1e-6)
+            # iou_scores_matrix = 1.0/iou_scores_matrix  # bad, don't use
+            iou_scores_matrix = -1.0 * iou_scores_matrix  # to minimize
 
-        ##### get bbox l2 scores
-        l2_gt = Y_bbvert[:, :, None, :, :].repeat(1, 1, bbnum, 1, 1)
-        l2_pred = y_bbvert_pred[:, None, :, :, :].repeat(1, bbnum, 1, 1, 1)
-        l2_gt = l2_gt.view((-1, bbnum, bbnum, 2 * 3))
-        l2_pred = l2_pred.view((-1, bbnum, bbnum, 2 * 3))
-        l2_scores_matrix = torch.mean((l2_gt - l2_pred) ** 2, dim=-1)
+            ##### get bbox l2 scores
+            l2_gt = Y_bbvert[:, :, None, :, :].repeat(1, 1, bbnum, 1, 1)
+            l2_pred = y_bbvert_pred[:, None, :, :, :].repeat(1, bbnum, 1, 1, 1)
+            l2_gt = l2_gt.view((-1, bbnum, bbnum, 2 * 3))
+            l2_pred = l2_pred.view((-1, bbnum, bbnum, 2 * 3))
+            l2_scores_matrix = torch.mean((l2_gt - l2_pred) ** 2, dim=-1)
 
-        ##### bbox association
-        if label == 'use_all_ce_l2_iou':
-            associate_maxtrix = ce_scores_matrix + l2_scores_matrix + iou_scores_matrix
-        elif label == 'use_both_ce_l2':
-            associate_maxtrix = ce_scores_matrix + l2_scores_matrix
-        elif label == 'use_both_ce_iou':
-            associate_maxtrix = ce_scores_matrix + iou_scores_matrix
-        elif label == 'use_both_l2_iou':
-            associate_maxtrix = l2_scores_matrix + iou_scores_matrix
-        elif label == 'use_only_ce':
-            associate_maxtrix = ce_scores_matrix
-        elif label == 'use_only_l2':
-            associate_maxtrix = l2_scores_matrix
-        elif label == 'use_only_iou':
-            associate_maxtrix = iou_scores_matrix
-        else:
-            associate_maxtrix = None
-            print('association label error!');
-            exit()
+            ##### bbox association
+            if label == 'use_all_ce_l2_iou':
+                associate_maxtrix = ce_scores_matrix + l2_scores_matrix + iou_scores_matrix
+            elif label == 'use_both_ce_l2':
+                associate_maxtrix = ce_scores_matrix + l2_scores_matrix
+            elif label == 'use_both_ce_iou':
+                associate_maxtrix = ce_scores_matrix + iou_scores_matrix
+            elif label == 'use_both_l2_iou':
+                associate_maxtrix = l2_scores_matrix + iou_scores_matrix
+            elif label == 'use_only_ce':
+                associate_maxtrix = ce_scores_matrix
+            elif label == 'use_only_l2':
+                associate_maxtrix = l2_scores_matrix
+            elif label == 'use_only_iou':
+                associate_maxtrix = iou_scores_matrix
+            else:
+                associate_maxtrix = None
+                print('association label error!');
+                exit()
 
-        pred_bborder, association_score_min = Ops.hungarian(associate_maxtrix, Y_bbvert)
-        pred_bborder = torch.from_numpy(pred_bborder).int().to(device)
+            pred_bborder, association_score_min = Ops.hungarian(associate_maxtrix, Y_bbvert)
+            pred_bborder = torch.from_numpy(pred_bborder).int().to(device)
 
         y_bbvert_pred_new = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred, pred_bborder, device)
 
