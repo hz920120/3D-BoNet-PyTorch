@@ -65,13 +65,12 @@ if __name__ == '__main__':
     #
     dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    data = Data(dataset_path, train_areas, test_areas, train_batch_size=16)
+    batch_size=8
+    data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
 
     # some parameters
-    batch_size = 1
-    num_feature = 128
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
@@ -80,7 +79,7 @@ if __name__ == '__main__':
     MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022700')
 
     # backbone_pointnet2
-    backbone = backbone_pointnet2(is_train=True)
+    backbone = backbone_pointnet2()
     backbone = backbone.to(device)
     # backbone.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_001.pth')))
     count1 = count_parameters(backbone)
@@ -97,7 +96,7 @@ if __name__ == '__main__':
     count2 = count_parameters(bbox_net)
 
     # pmask_net
-    pmask_net = pmask_net(p_f_num=num_feature)
+    pmask_net = pmask_net()
     pmask_net = pmask_net.to(device)
     # pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_001.pth')))
     count3 = count_parameters(pmask_net)
@@ -111,7 +110,7 @@ if __name__ == '__main__':
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
-    train_old = True
+    train_old = False
     epoch = 0
     if train_old:
         check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model.pt'))
@@ -147,20 +146,22 @@ if __name__ == '__main__':
             psemce_loss = get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
 
             y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features)
+            label = 'use_all_ce_l2_iou'
+            y_bbvert_pred, pred_bborder = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+                                                                 label=label, device=device)
+            # associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
+            #                                                      label='use_all_ce_l2_iou')
+            # hun = Hungarian().cuda()
+            # pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
+            # pred_bborder = Ops.cast(pred_bborder, torch.int32)
+            # y_bbvert_pred = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred_raw, pred_bborder)
 
-            associate_maxtrix, Y_bbvert = Ops.bbvert_association(bat_pc, y_bbvert_pred_raw, bat_bbvert,
-                                                                 label='use_all_ce_l2_iou')
-            hun = Hungarian().cuda()
-            pred_bborder, _ = hun(associate_maxtrix, Y_bbvert)
-            pred_bborder = Ops.cast(pred_bborder, torch.int32)
-            y_bbvert_pred = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred_raw, pred_bborder)
-
-            y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_raw, pred_bborder)
+            y_bbscore_pred = Ops.bbscore_association(y_bbscore_pred_raw, pred_bborder, device)
 
             # loss bbox
             # bbvert_loss, bbvert_loss_l2, bbvert_loss_ce, bbvert_loss_iou = \
             #     Ops.get_loss_bbvert(bat_pc, y_bbvert_pred, bat_bbvert, label='use_all_ce_l2_iou')
-            get_loss_bbvert = BbVertLoss('use_all_ce_l2_iou').cuda()
+            get_loss_bbvert = BbVertLoss(label).cuda()
             bbvert_loss, bbvert_loss_l2, bbvert_loss_ce, bbvert_loss_iou = get_loss_bbvert(bat_pc, y_bbvert_pred,
                                                                                            bat_bbvert)
             # bbscore_loss = Ops.get_loss_bbscore(y_bbscore_pred, bat_bbvert)
@@ -203,6 +204,15 @@ if __name__ == '__main__':
                     bbvert_loss, bbscore_loss, ms_loss, psemce_loss
                 ))
                 print("-----------------------------------------------------------")
+                x_axis = epoch * total_train_batch_num + (batch_size * i)
+                sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss, x_axis)
+                sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2, x_axis)
+                sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
+                sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou, x_axis)
+                sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss, x_axis)
+                sum_total_loss = writer.add_scalar('bbscore_loss', total_loss, x_axis)
+                sum_pmask_loss = writer.add_scalar('bbscore_loss', ms_loss, x_axis)
+                sum_psemce_loss = writer.add_scalar('bbscore_loss', psemce_loss, x_axis)
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))

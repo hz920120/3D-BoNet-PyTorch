@@ -1,5 +1,6 @@
 import torch
-import torch.nn.functional as F
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 
 def cast(x, dtype):
@@ -32,31 +33,49 @@ class Ops:
             return Ops.lrelu(x, leak=0.2)
 
     ####################################
-    @staticmethod
-    def gather_tensor_along_2nd_axis(bat_bb_pred, bat_bb_indices):
-        bat_size = bat_bb_pred.size()[0]
-        [_, ins_max_num, d1, d2] = bat_bb_pred.shape
-        bat_size_range = torch.arange(bat_size, device=torch.device('cuda'))
-        bat_size_range_flat = torch.reshape(bat_size_range, [-1, 1])
-        bat_size_range_flat_repeat = Ops.repeat(bat_size_range_flat, [1, int(ins_max_num)])
-        bat_size_range_flat_repeat = torch.reshape(bat_size_range_flat_repeat, [-1])
+    # @staticmethod
+    # def gather_tensor_along_2nd_axis(bat_bb_pred, bat_bb_indices):
+    #     bat_size = bat_bb_pred.size()[0]
+    #     [_, ins_max_num, d1, d2] = bat_bb_pred.shape
+    #     bat_size_range = torch.arange(bat_size, device=torch.device('cuda'))
+    #     bat_size_range_flat = torch.reshape(bat_size_range, [-1, 1])
+    #     bat_size_range_flat_repeat = Ops.repeat(bat_size_range_flat, [1, int(ins_max_num)])
+    #     bat_size_range_flat_repeat = torch.reshape(bat_size_range_flat_repeat, [-1])
+    #
+    #     indices_2d_flat = torch.reshape(bat_bb_indices, [-1])
+    #     indices_2d_flat_repeat = bat_size_range_flat_repeat * int(ins_max_num) + indices_2d_flat
+    #
+    #     bat_bb_pred = torch.reshape(bat_bb_pred, [-1, int(d1), int(d2)])
+    #     # TODO bat_bb_pred_new = tf.gather(bat_bb_pred, indices_2d_flat_repeat)
+    #     # repeat = torch.from_numpy(indices_2d_flat_repeat).long()
+    #     # repeat = repeat.unsqueeze(1)
+    #     # repeat = repeat.expand(1,3,5)
+    #     # repeat = repeat.squeeze()
+    #     indices_2d_flat_repeat = indices_2d_flat_repeat.unsqueeze(1).expand(indices_2d_flat_repeat.size()[0],
+    #                                                                         bat_bb_pred.size()[1])
+    #     indices_2d_flat_repeat = indices_2d_flat_repeat.unsqueeze(2).expand(indices_2d_flat_repeat.size()[0],
+    #                                                                         bat_bb_pred.size()[1],
+    #                                                                         bat_bb_pred.size()[2])
+    #     bat_bb_pred_new = bat_bb_pred.gather(0, indices_2d_flat_repeat)
+    #     bat_bb_pred_new = torch.reshape(bat_bb_pred_new, [bat_size, int(ins_max_num), int(d1), int(d2)])
+    #
+    #     return bat_bb_pred_new
 
-        indices_2d_flat = torch.reshape(bat_bb_indices, [-1])
+    @staticmethod
+    def gather_tensor_along_2nd_axis(bat_bb_pred, bat_bb_indices, device='cpu'):
+        bat_size, ins_max_num, d1, d2 = bat_bb_pred.shape
+        bat_size_range = torch.arange(0, bat_size, 1)
+
+        bat_size_range_flat = bat_size_range.view((-1, 1))
+        bat_size_range_flat_repeat = bat_size_range_flat.repeat(1, int(ins_max_num))
+        bat_size_range_flat_repeat = bat_size_range_flat_repeat.view(-1).int().to(device)
+
+        indices_2d_flat = bat_bb_indices.view(-1).int()
         indices_2d_flat_repeat = bat_size_range_flat_repeat * int(ins_max_num) + indices_2d_flat
 
-        bat_bb_pred = torch.reshape(bat_bb_pred, [-1, int(d1), int(d2)])
-        # TODO bat_bb_pred_new = tf.gather(bat_bb_pred, indices_2d_flat_repeat)
-        # repeat = torch.from_numpy(indices_2d_flat_repeat).long()
-        # repeat = repeat.unsqueeze(1)
-        # repeat = repeat.expand(1,3,5)
-        # repeat = repeat.squeeze()
-        indices_2d_flat_repeat = indices_2d_flat_repeat.unsqueeze(1).expand(indices_2d_flat_repeat.size()[0],
-                                                                            bat_bb_pred.size()[1])
-        indices_2d_flat_repeat = indices_2d_flat_repeat.unsqueeze(2).expand(indices_2d_flat_repeat.size()[0],
-                                                                            bat_bb_pred.size()[1],
-                                                                            bat_bb_pred.size()[2])
-        bat_bb_pred_new = bat_bb_pred.gather(0, indices_2d_flat_repeat)
-        bat_bb_pred_new = torch.reshape(bat_bb_pred_new, [bat_size, int(ins_max_num), int(d1), int(d2)])
+        bat_bb_pred = bat_bb_pred.view(-1, int(d1), int(d2))
+        bat_bb_pred_new = torch.index_select(bat_bb_pred, 0, indices_2d_flat_repeat.long())
+        bat_bb_pred_new = bat_bb_pred_new.view(bat_size, int(ins_max_num), int(d1), int(d2))
 
         return bat_bb_pred_new
 
@@ -96,39 +115,41 @@ class Ops:
     #     return ordering, loss_total
 
     @staticmethod
-    def bbvert_association(X_pc, y_bbvert_pred, Y_bbvert, label=''):
-        points_num = X_pc.size()[1]
+    def bbvert_association(X_pc, y_bbvert_pred, Y_bbvert, label='', device='cpu'):
+        points_num = X_pc.shape[1]
         bbnum = int(y_bbvert_pred.shape[1])
         points_xyz = X_pc[:, :, 0:3]
-        points_xyz = Ops.repeat(points_xyz[:, None, :, :], [1, bbnum, 1, 1])
+        points_xyz = points_xyz[:, None, :, :].repeat(1, bbnum, 1, 1)
 
         ##### get points hard mask in each gt bbox
         gt_bbox_min_xyz = Y_bbvert[:, :, 0, :]
         gt_bbox_max_xyz = Y_bbvert[:, :, 1, :]
-        gt_bbox_min_xyz = gt_bbox_min_xyz[:, :, None, :].repeat([1, 1, points_num, 1])
-        gt_bbox_max_xyz = gt_bbox_max_xyz[:, :, None, :].repeat([1, 1, points_num, 1])
+        gt_bbox_min_xyz = gt_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+        gt_bbox_max_xyz = gt_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
         tp1_gt = gt_bbox_min_xyz - points_xyz
         tp2_gt = points_xyz - gt_bbox_max_xyz
         tp_gt = tp1_gt * tp2_gt
-        mean = torch.mean(cast(torch.ge(tp_gt, 0.), torch.float32), dim=-1)
-        points_in_gt_bbox_prob = cast(torch.eq(mean, torch.ones(mean.shape, device=torch.device('cuda'))), torch.float32)
+        points_in_gt_bbox_prob = torch.eq(torch.mean(torch.gt(tp_gt, 0.0).float(), dim=-1), 1.0).float()  # B,H,N
 
         ##### get points soft mask in each pred bbox ---> Algorithm 1
         pred_bbox_min_xyz = y_bbvert_pred[:, :, 0, :]
         pred_bbox_max_xyz = y_bbvert_pred[:, :, 1, :]
-        pred_bbox_min_xyz = Ops.repeat(pred_bbox_min_xyz[:, :, None, :], [1, 1, points_num, 1])
-        pred_bbox_max_xyz = Ops.repeat(pred_bbox_max_xyz[:, :, None, :], [1, 1, points_num, 1])
+        pred_bbox_min_xyz = pred_bbox_min_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
+        pred_bbox_max_xyz = pred_bbox_max_xyz[:, :, None, :].repeat(1, 1, points_num, 1)
         tp1_pred = pred_bbox_min_xyz - points_xyz
         tp2_pred = points_xyz - pred_bbox_max_xyz
         tp_pred = 100 * tp1_pred * tp2_pred
-        tp_pred = torch.max(torch.min(tp_pred, torch.empty(tp_pred.shape, device=torch.device('cuda')).fill_(20.)),
-                              torch.empty(tp_pred.shape, device=torch.device('cuda')).fill_(-20.0))
+
+        tp_pred[tp_pred >= 20.0] = 20.0
+        tp_pred[tp_pred <= -20.0] = -20.0
+
         points_in_pred_bbox_prob = 1.0 / (1.0 + torch.exp(-1.0 * tp_pred))
-        points_in_pred_bbox_prob = torch.min(points_in_pred_bbox_prob, dim=-1).values
+        points_in_pred_bbox_prob = torch.min(points_in_pred_bbox_prob, dim=-1)[0]  # B,H,N
 
         ##### get bbox cross entropy scores
-        prob_gt = Ops.repeat(points_in_gt_bbox_prob[:, :, None, :], [1, 1, bbnum, 1])
-        prob_pred = Ops.repeat(points_in_pred_bbox_prob[:, None, :, :], [1, bbnum, 1, 1])
+        prob_gt = points_in_gt_bbox_prob[:, :, None, :].repeat(1, 1, bbnum, 1)
+        prob_pred = points_in_pred_bbox_prob[:, None, :, :].repeat(1, bbnum, 1, 1)
+
         ce_scores_matrix = - prob_gt * torch.log(prob_pred + 1e-8) - (1 - prob_gt) * torch.log(1 - prob_pred + 1e-8)
         ce_scores_matrix = torch.mean(ce_scores_matrix, dim=-1)
 
@@ -141,10 +162,10 @@ class Ops:
         iou_scores_matrix = -1.0 * iou_scores_matrix  # to minimize
 
         ##### get bbox l2 scores
-        l2_gt = Ops.repeat(Y_bbvert[:, :, None, :, :], [1, 1, bbnum, 1, 1])
-        l2_pred = Ops.repeat(y_bbvert_pred[:, None, :, :, :], [1, bbnum, 1, 1, 1])
-        l2_gt = torch.reshape(l2_gt, [-1, bbnum, bbnum, 2 * 3])
-        l2_pred = torch.reshape(l2_pred, [-1, bbnum, bbnum, 2 * 3])
+        l2_gt = Y_bbvert[:, :, None, :, :].repeat(1, 1, bbnum, 1, 1)
+        l2_pred = y_bbvert_pred[:, None, :, :, :].repeat(1, bbnum, 1, 1, 1)
+        l2_gt = l2_gt.view((-1, bbnum, bbnum, 2 * 3))
+        l2_pred = l2_pred.view((-1, bbnum, bbnum, 2 * 3))
         l2_scores_matrix = torch.mean((l2_gt - l2_pred) ** 2, dim=-1)
 
         ##### bbox association
@@ -167,30 +188,46 @@ class Ops:
             print('association label error!');
             exit()
 
-        ######
-        # hun = Hungarian()
-        # pred_bborder, association_score_min = hun(associate_maxtrix, Y_bbvert)
-        # # pred_bborder, association_score_min = Ops.hungarian(associate_maxtrix, bb_gt=Y_bbvert)
-        # pred_bborder = cast(pred_bborder, dtype=torch.int32)
-        # y_bbvert_pred_new = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred, pred_bborder)
-        #
-        # return y_bbvert_pred_new, pred_bborder
-        return associate_maxtrix, Y_bbvert
+        pred_bborder, association_score_min = Ops.hungarian(associate_maxtrix, Y_bbvert)
+        pred_bborder = torch.from_numpy(pred_bborder).int().to(device)
 
-    # @staticmethod
-    # def tile(tensor, reps):
-    #     tensor_numpy = tensor.cpu().detach().numpy()
-    #     tensor_numpy = np.tile(tensor_numpy, reps)
-    #     res = torch.from_numpy(tensor_numpy)
-    #     return res.cuda()
+        y_bbvert_pred_new = Ops.gather_tensor_along_2nd_axis(y_bbvert_pred, pred_bborder, device)
 
-    # def tile(a, dim, n_tile):
-    #     init_dim = a.size(dim)
-    #     repeat_idx = [1] * a.dim()
-    #     repeat_idx[dim] = n_tile
-    #     a = a.repeat(*(repeat_idx))
-    #     order_index = torch.LongTensor(np.concatenate([init_dim * np.arange(n_tile) + i for i in range(init_dim)]))
-    #     return torch.index_select(a, dim, order_index)
+        return y_bbvert_pred_new, pred_bborder
+
+    @staticmethod
+    def hungarian(cost, gt_boxes):
+        box_mask = np.array([[0, 0, 0], [0, 0, 0]])
+        # return ordering : batch_size x num_instances
+        loss_total = 0.
+
+        batch_size, num_instances = cost.shape[:2]
+        ordering = np.zeros(shape=[batch_size, num_instances]).astype(np.int32)
+        cost_numpy = cost.clone().detach().cpu().numpy()
+        gt_boxes_numpy = gt_boxes.clone().detach().cpu().numpy()
+        for idx in range(batch_size):
+            ins_gt_boxes = gt_boxes_numpy[idx]
+            ins_count = 0
+            for box in ins_gt_boxes:
+                if np.array_equal(box, box_mask):
+                    break
+                else:
+                    ins_count += 1
+            valid_cost = cost_numpy[idx][:ins_count]
+            row_ind, col_ind = linear_sum_assignment(valid_cost)  # solve hungarian
+
+            ## ins_gt order
+            unmapped = num_instances - ins_count
+            if unmapped > 0:
+                rest = np.array(range(ins_count, num_instances))
+                row_ind = np.concatenate([row_ind, rest])
+                unmapped_ind = np.array(list(set(range(num_instances)) - set(col_ind)))
+                col_ind = np.concatenate([col_ind, unmapped_ind])
+
+            loss_total += cost_numpy[idx][row_ind, col_ind].sum()
+            ordering[idx] = np.reshape(col_ind, [1, -1])
+
+        return ordering, (loss_total / float(batch_size * num_instances)).astype(np.float32)
 
     @staticmethod
     def repeat(tensor, dims):
@@ -222,11 +259,11 @@ class Ops:
     #     return res.cuda()
 
     @staticmethod
-    def bbscore_association(y_bbscore_pred_raw, pred_bborder):
+    def bbscore_association(y_bbscore_pred_raw, pred_bborder, device='cpu'):
         y_bbscore_pred_raw = y_bbscore_pred_raw[:, :, None, None]
-        y_bbscore_pred_new = Ops.gather_tensor_along_2nd_axis(y_bbscore_pred_raw, pred_bborder)
+        y_bbscore_pred_new = Ops.gather_tensor_along_2nd_axis(y_bbscore_pred_raw, pred_bborder, device)
 
-        y_bbscore_pred_new = torch.reshape(y_bbscore_pred_new, [-1, int(y_bbscore_pred_new.shape[1])])
+        y_bbscore_pred_new = y_bbscore_pred_new.view((-1, int(y_bbscore_pred_new.shape[1])))
         return y_bbscore_pred_new
 
     ####################################  sem loss
