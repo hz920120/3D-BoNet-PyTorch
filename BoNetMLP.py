@@ -135,11 +135,11 @@ class bbox_net(nn.Module):
         return y_bbvert_pred, y_bbscore_pred
 
 class pmask_net(nn.Module):
-    def __init__(self, p_f_num):
+    def __init__(self):
         super(pmask_net, self).__init__()
         self.fc1 = nn.Linear(512, 256)
         self.lrelu1 = nn.LeakyReLU(negative_slope)
-        self.conv1 = nn.Conv2d(1, 256, (1, p_f_num))
+        self.conv1 = nn.Conv2d(128, 256, (1, 1))
         self.lrelu2 = nn.LeakyReLU(negative_slope)
         self.conv2 = nn.Conv2d(512, 128, (1, 1))
         self.lrelu3 = nn.LeakyReLU(negative_slope)
@@ -157,7 +157,8 @@ class pmask_net(nn.Module):
         p_num = point_features.shape[1]
         num_box = bbox.shape[1]
         global_features = self.lrelu1(self.fc1(global_features))[:, None, None, :].repeat(1, p_num, 1, 1)
-        point_features = self.lrelu2(self.conv1(point_features.unsqueeze(-1).permute(0, 3, 1, 2)))
+        # point_features = self.lrelu2(self.conv1(point_features.unsqueeze(-1).permute(0, 3, 1, 2)))
+        point_features = self.lrelu2(self.conv1(point_features.unsqueeze(-1).transpose(1, 2)))
         point_features = torch.cat((point_features, global_features.permute(0, 3, 1, 2)), dim=1)
         point_features = self.lrelu3(self.conv2(point_features))
         point_features = self.lrelu4(self.conv3(point_features))
@@ -166,11 +167,12 @@ class pmask_net(nn.Module):
         bbox_info = torch.cat([torch.reshape(bbox, [-1, num_box, 6]), bboxscore[:, :, None]], dim=-1)[:, :, None, :].repeat(1, 1, p_num, 1)
         pmask0 = point_features.transpose(1, 2).unsqueeze(1).repeat(1, num_box, 1, 1)
         pmask0 = torch.cat((pmask0, bbox_info), dim=-1)
-        pmask0 = pmask0.reshape(-1, p_num, pmask0.shape[-1], 1)
+        # pmask0 = pmask0.reshape(-1, p_num, pmask0.shape[-1], 1)
 
-        pmask1 = self.lrelu5(self.conv4(pmask0.permute(0, 2, 3, 1)))
+        pmask1 = self.lrelu5(self.conv4(pmask0.transpose(1, 3)))
         pmask2 = self.lrelu6(self.conv5(pmask1))
-        pmask3 = self.lrelu7(self.conv6(pmask2)).permute(0, 2, 3, 1)
+        # pmask3 = self.lrelu7(self.conv6(pmask2)).permute(0, 2, 3, 1)
+        pmask3 = self.lrelu7(self.conv6(pmask2)).squeeze(dim=1).transpose(1,2)
         pmask4 = pmask3.reshape(-1, num_box, p_num)
 
         y_pmask_logits = self.sigmoid(pmask4)
