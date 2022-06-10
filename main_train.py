@@ -4,6 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from BoNetMLP import *
 from helper_net import Ops
+from main_eval import Evaluation
 
 gpu_num = 0
 
@@ -97,7 +98,7 @@ if __name__ == '__main__':
     count2 = count_parameters(bbox_net)
 
     # pmask_net
-    pmask_net = pmask_net(p_f_num=num_feature)
+    pmask_net = pmask_net()
     pmask_net = pmask_net.to(device)
     # pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_001.pth')))
     count3 = count_parameters(pmask_net)
@@ -203,6 +204,15 @@ if __name__ == '__main__':
                     bbvert_loss, bbscore_loss, ms_loss, psemce_loss
                 ))
                 print("-----------------------------------------------------------")
+                x_axis = epoch * total_train_batch_num + (batch_size * i)
+                sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss, x_axis)
+                sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2, x_axis)
+                sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
+                sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou, x_axis)
+                sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss, x_axis)
+                sum_total_loss = writer.add_scalar('bbscore_loss', total_loss, x_axis)
+                sum_pmask_loss = writer.add_scalar('bbscore_loss', ms_loss, x_axis)
+                sum_psemce_loss = writer.add_scalar('bbscore_loss', psemce_loss, x_axis)
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
@@ -219,3 +229,7 @@ if __name__ == '__main__':
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': total_loss,
             }, os.path.join(BASE_DIR, save_model_dir, 'latest_model.pt'))
+            print("load model successfully")
+            result_path = './train_evaluate/' + ep + '/' + test_areas[0] + '/'
+            Evaluation.ttest(data, result_path, test_batch_size=8, MODEL_PATH)
+            valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path, writer, ep)

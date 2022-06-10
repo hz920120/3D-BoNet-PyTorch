@@ -110,10 +110,8 @@ class Evaluation:
 
     # use GT semantic now (for validation)
     @staticmethod
-    def ttest(data, result_path, test_batch_size=1):
+    def ttest(data, result_path, test_batch_size=1, MODEL_PATH=None):
         # parameter
-        num_feature = 128
-        max_output_size = 64
         # load trained model
         from BoNetMLP import backbone_pointnet2, pmask_net, bbox_net, Hungarian
 
@@ -125,7 +123,7 @@ class Evaluation:
         backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_130.pth')))
         backbone_pointnet2 = backbone_pointnet2.eval()
 
-        pmask_net = pmask_net(p_f_num=num_feature).cuda()
+        pmask_net = pmask_net().cuda()
         pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_130.pth')))
         pmask_net = pmask_net.eval()
 
@@ -179,7 +177,7 @@ class Evaluation:
             scipy.io.savemat(result_path + 'res_by_scene/' + scene_name + '.mat', scene_result, do_compression=True)
 
     @staticmethod
-    def evaluation(dataset_path, train_areas, result_path):
+    def evaluation(dataset_path, train_areas, result_path, writer=None, ep=None):
         from helper_data_s3dis import Data_Configs as Data_Configs
         configs = Data_Configs()
         mean_insSize_by_sem = Eval_Tools.get_mean_insSize_by_sem(dataset_path, train_areas)
@@ -305,11 +303,20 @@ class Evaluation:
             out_file = result_path + 'PreRec_' + str(sem_id).zfill(2) + '_' + sem_name + '_' + str(
                 round(pre, 4)) + '_' + str(round(rec, 4))
             np.savez_compressed(out_file + '.npz', tp={0, 0})
-        out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
-            round(np.mean(rec_all), 4))
-        np.savez_compressed(out_file + '.npz', tp={0, 0})
-
-        return 0
+        # out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
+        #     round(np.mean(rec_all), 4))
+        # np.savez_compressed(out_file + '.npz', tp={0, 0})
+        if writer:
+            print(round(np.mean(pre_all), 4))
+            print(round(np.mean(rec_all), 4))
+            writer.add_scalar('valid_mPre', round(np.mean(pre_all), 4), ep)
+            writer.add_scalar('valid_mRec', round(np.mean(rec_all), 4), ep)
+            return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
+        else:
+            out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
+                round(np.mean(rec_all), 4))
+            np.savez_compressed(out_file + '.npz', tp={0, 0})
+            return 0
 
 
 #######################
