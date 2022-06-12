@@ -66,19 +66,18 @@ if __name__ == '__main__':
     #
     dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    data = Data(dataset_path, train_areas, test_areas, train_batch_size=16)
+    batch_size = 8
+    data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
 
     # some parameters
-    batch_size = 1
-    num_feature = 128
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
-    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022700')
+    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/20220610')
 
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
@@ -112,10 +111,10 @@ if __name__ == '__main__':
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
-    train_old = True
+    train_old = False
     epoch = 0
     if train_old:
-        check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model.pt'))
+        check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model_30.pt'))
         backbone.load_state_dict(check_point['backbone_state_dict'])
         backbone.train()
         bbox_net.load_state_dict(check_point['bbox_state_dict'])
@@ -128,9 +127,9 @@ if __name__ == '__main__':
         print('load net, epoch : {},  total_loss : {}'.format(epoch, total_loss))
 
     print('total train batch num:', total_train_batch_num)
-    for ep in range(epoch, epoch+51, 1):
+    for ep in range(epoch, epoch + 51, 1):
         for g in optimizer.param_groups:
-            lr = max(0.0005/(2**(ep//20)), 0.00001)
+            lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
             print('ep : {}, lr : {}'.format(ep, lr))
         data.shuffle_train_files(ep)
@@ -216,20 +215,32 @@ if __name__ == '__main__':
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
-        if ep % 5 == 0:
+        if ep % 2 == 0:
+            if ep == 5:
+                continue
+            print('saving model : ', datetime.now().strftime("%H:%M:%S"))
             torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
             torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
             torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net_out', ep))
-            PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model.pt')
-            torch.save({
+            PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
+            params = {
                 'epoch': ep,
                 'backbone_state_dict': backbone.state_dict(),
                 'bbox_state_dict': bbox_net.state_dict(),
                 'pmask_state_dict': pmask_net.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': total_loss,
-            }, os.path.join(BASE_DIR, save_model_dir, 'latest_model.pt'))
-            print("load model successfully")
-            result_path = './train_evaluate/' + ep + '/' + test_areas[0] + '/'
-            Evaluation.ttest(data, result_path, test_batch_size=8, MODEL_PATH)
-            valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path, writer, ep)
+            }
+            torch.save(params, PATH)
+            print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
+            result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
+            print(result_path)
+            last_valid_mPre = 0
+            with torch.no_grad():
+                print('evaluating model : ', datetime.now().strftime("%H:%M:%S"))
+                Evaluation.ttest(data, result_path, test_batch_size=batch_size, MODEL_PATH=PATH)
+                valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path, writer, ep)
+                if valid_mPre >= last_valid_mPre:
+                    last_valid_mPre = valid_mPre
+                    torch.save(params, '{}/{}_epoch-{}_area-{}_mPre-{}'.format(os.path.join(BASE_DIR, save_model_dir), 'bonet_pointnet', ep, test_areas[0], valid_mPre))
+                print('evaluation ends : ', datetime.now().strftime("%H:%M:%S"))

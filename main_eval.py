@@ -114,21 +114,20 @@ class Evaluation:
         # parameter
         # load trained model
         from BoNetMLP import backbone_pointnet2, pmask_net, bbox_net, Hungarian
-
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
-        MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022800')
-
+        # MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022800')
+        checkpoint = torch.load(MODEL_PATH)
         backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_130.pth')))
+        backbone_pointnet2.load_state_dict(checkpoint['backbone_state_dict'])
         backbone_pointnet2 = backbone_pointnet2.eval()
 
         pmask_net = pmask_net().cuda()
-        pmask_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'pmask_net_out_130.pth')))
+        pmask_net.load_state_dict(checkpoint['pmask_state_dict'])
         pmask_net = pmask_net.eval()
 
         bbox_net = bbox_net().cuda()
-        bbox_net.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'bbox_net_out_130.pth')))
+        bbox_net.load_state_dict(checkpoint['bbox_state_dict'])
         bbox_net = bbox_net.eval()
 
         print("Load model suceessfully.")
@@ -325,12 +324,14 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
     dataset_path = './Data_S3DIS/'
-    train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_5', 'Area_4']
+    train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     os.system('rm -rf %s' % (result_path))
-
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022061100')
+    # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
+    PATH = os.path.join(save_model_dir, 'latest_model_44.pt')
     data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    Evaluation.ttest(data, result_path, test_batch_size=4)
+    Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
     Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
