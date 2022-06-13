@@ -64,7 +64,7 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS/'
+    dataset_path = './Data_S3DIS_bak/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 8
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
@@ -215,9 +215,7 @@ if __name__ == '__main__':
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
-        if ep % 2 == 0:
-            if ep == 5:
-                continue
+        if ep % 5 == 0:
             print('saving model : ', datetime.now().strftime("%H:%M:%S"))
             torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
             torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
@@ -233,6 +231,8 @@ if __name__ == '__main__':
             }
             torch.save(params, PATH)
             print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
+            if ep < 30:
+                continue
             result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
             print(result_path)
             last_valid_mPre = 0
