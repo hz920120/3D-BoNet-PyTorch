@@ -7,7 +7,7 @@ import h5py
 import torch
 from data_process import DataProcessing
 
-class Data_Configs:
+class Data_Configs_RandLA:
     sem_names = ['ceiling', 'floor', 'wall', 'beam', 'column', 'window', 'door',
                  'table', 'chair', 'sofa', 'bookcase', 'board', 'clutter']
     sem_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -18,8 +18,9 @@ class Data_Configs:
     train_pts_num = 4096
     test_pts_num = 4096
     num_layers = 5
-    k_n: 16
-    sub_sampling_ratio: [4, 4, 4, 4, 2]
+    k_n = 16
+    sub_sampling_ratio = [4, 4, 4, 4, 2]
+    d_out = [16, 64, 128, 256, 512]
 
 
 class Data_S3DIS:
@@ -30,13 +31,13 @@ class Data_S3DIS:
         print('train files:', len(self.train_files))
         print('test files:', len(self.test_files))
 
-        self.ins_max_num = Data_Configs.ins_max_num
+        self.ins_max_num = Data_Configs_RandLA.ins_max_num
         self.train_batch_size = train_batch_size
         self.total_train_batch_num = len(self.train_files) // self.train_batch_size
 
-        self.num_layers = Data_Configs.num_layers
-        self.k_n = Data_Configs.k_n
-        self.sub_sampling_ratio = Data_Configs.sub_sampling_ratio
+        self.num_layers = Data_Configs_RandLA.num_layers
+        self.k_n = Data_Configs_RandLA.k_n
+        self.sub_sampling_ratio = Data_Configs_RandLA.sub_sampling_ratio
 
         self.train_next_bat_index = 0
 
@@ -93,14 +94,14 @@ class Data_S3DIS:
 
     @staticmethod
     def get_bbvert_pmask_labels(pc, ins_labels):
-        gt_bbvert_padded = np.zeros((Data_Configs.ins_max_num, 2, 3), dtype=np.float32)
-        gt_pmask = np.zeros((Data_Configs.ins_max_num, pc.shape[0]), dtype=np.float32)
+        gt_bbvert_padded = np.zeros((Data_Configs_RandLA.ins_max_num, 2, 3), dtype=np.float32)
+        gt_pmask = np.zeros((Data_Configs_RandLA.ins_max_num, pc.shape[0]), dtype=np.float32)
         count = -1
         unique_ins_labels = np.unique(ins_labels)
         for ins_ind in unique_ins_labels:
             if ins_ind <= -1: continue
             count += 1
-            if count >= Data_Configs.ins_max_num: print('ignored! more than max instances:',
+            if count >= Data_Configs_RandLA.ins_max_num: print('ignored! more than max instances:',
                                                         len(unique_ins_labels)); continue
 
             ins_labels_tp = np.zeros(ins_labels.shape, dtype=np.int8)
@@ -149,10 +150,10 @@ class Data_S3DIS:
         ins_labels = ins_labels.reshape([-1])
         bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.get_bbvert_pmask_labels(pc_xyzrgb, ins_labels)
 
-        psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs.sem_num), dtype=np.int8)
+        psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs_RandLA.sem_num), dtype=np.int8)
         for idx, s in enumerate(sem_labels):
             if sem_labels[idx] == -1: continue  # invalid points
-            sem_idx = Data_Configs.sem_ids.index(s)
+            sem_idx = Data_Configs_RandLA.sem_ids.index(s)
             psem_onehot_labels[idx, sem_idx] = 1
 
         return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
