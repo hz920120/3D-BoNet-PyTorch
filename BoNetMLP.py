@@ -12,60 +12,60 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)  # model
 sys.path.append(os.path.join(ROOT_DIR, 'Pointnet2.PyTorch'))
 
-from pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
+# from pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
 
 negative_slope = 0.2
 
 
 # 1.backbone
-class backbone_pointnet2(nn.Module):
-    def __init__(self, is_train):
-        super(backbone_pointnet2, self).__init__()
-        self.sa1 = PointnetSAModule(mlp=[6, 32, 32, 64], npoint=1024, radius=0.1, nsample=32, bn=True)
-        self.sa2 = PointnetSAModule(mlp=[64, 64, 64, 128], npoint=256, radius=0.2, nsample=64, bn=True)
-        self.sa3 = PointnetSAModule(mlp=[128, 128, 128, 256], npoint=64, radius=0.4, nsample=128, bn=True)
-        self.sa4 = PointnetSAModule(mlp=[256, 256, 256, 512], npoint=None, radius=None, nsample=None, bn=True)
-        self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
-        self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
-        self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
-        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
-        self.is_train = is_train
-        self.conv1 = nn.Conv2d(128, 128, kernel_size=(1, 1), stride=(1, 1))
-        self.lrelu1 = nn.LeakyReLU(negative_slope)
-        self.conv2 = nn.Conv2d(128, 64, kernel_size=(1, 1), stride=(1, 1))
-        self.lrelu2 = nn.LeakyReLU(negative_slope)
-        self.drop = nn.Dropout(p=0.5)
-        self.conv3 = nn.Conv2d(64, 13, kernel_size=(1, 1), stride=(1, 1))
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, X_pc):
-        points_num = X_pc.size()[1]
-        l0_xyz = X_pc[:, :, 0:3]
-        l0_points = X_pc[:, :, 3:9].transpose(1, 2)
-
-        l1_xyz, l1_points = self.sa1(l0_xyz.contiguous(), l0_points)
-        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
-        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
-        l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
-        l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
-        l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
-        l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
-        l0_points = self.fp1(l0_xyz.contiguous(), l1_xyz, torch.cat((l0_xyz.transpose(1, 2), l0_points), dim=1), l1_points)
-        global_features = torch.reshape(l4_points, [-1, 512])
-        l0_points = l0_points.transpose(1, 2)
-        point_features = l0_points
-
-        # sem
-        l0_points = l0_points.transpose(1, 2)
-        l0_points = l0_points[:, :, None, :]
-        sem1 = self.lrelu1(self.conv1(l0_points))
-        sem2 = self.lrelu2(self.conv2(sem1))
-        sem2 = self.drop(sem2)
-        sem3 = self.conv3(sem2)
-        y_psem_logits = sem3.squeeze(-2).transpose(1, 2)
-        y_sem_pred = self.softmax(y_psem_logits)
-
-        return point_features, global_features, y_sem_pred, y_psem_logits
+# class backbone_pointnet2(nn.Module):
+#     def __init__(self, is_train):
+#         super(backbone_pointnet2, self).__init__()
+#         self.sa1 = PointnetSAModule(mlp=[6, 32, 32, 64], npoint=1024, radius=0.1, nsample=32, bn=True)
+#         self.sa2 = PointnetSAModule(mlp=[64, 64, 64, 128], npoint=256, radius=0.2, nsample=64, bn=True)
+#         self.sa3 = PointnetSAModule(mlp=[128, 128, 128, 256], npoint=64, radius=0.4, nsample=128, bn=True)
+#         self.sa4 = PointnetSAModule(mlp=[256, 256, 256, 512], npoint=None, radius=None, nsample=None, bn=True)
+#         self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
+#         self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
+#         self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
+#         self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
+#         self.is_train = is_train
+#         self.conv1 = nn.Conv2d(128, 128, kernel_size=(1, 1), stride=(1, 1))
+#         self.lrelu1 = nn.LeakyReLU(negative_slope)
+#         self.conv2 = nn.Conv2d(128, 64, kernel_size=(1, 1), stride=(1, 1))
+#         self.lrelu2 = nn.LeakyReLU(negative_slope)
+#         self.drop = nn.Dropout(p=0.5)
+#         self.conv3 = nn.Conv2d(64, 13, kernel_size=(1, 1), stride=(1, 1))
+#         self.softmax = nn.Softmax(dim=-1)
+#
+#     def forward(self, X_pc):
+#         points_num = X_pc.size()[1]
+#         l0_xyz = X_pc[:, :, 0:3]
+#         l0_points = X_pc[:, :, 3:9].transpose(1, 2)
+#
+#         l1_xyz, l1_points = self.sa1(l0_xyz.contiguous(), l0_points)
+#         l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+#         l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+#         l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
+#         l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
+#         l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
+#         l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
+#         l0_points = self.fp1(l0_xyz.contiguous(), l1_xyz, torch.cat((l0_xyz.transpose(1, 2), l0_points), dim=1), l1_points)
+#         global_features = torch.reshape(l4_points, [-1, 512])
+#         l0_points = l0_points.transpose(1, 2)
+#         point_features = l0_points
+#
+#         # sem
+#         l0_points = l0_points.transpose(1, 2)
+#         l0_points = l0_points[:, :, None, :]
+#         sem1 = self.lrelu1(self.conv1(l0_points))
+#         sem2 = self.lrelu2(self.conv2(sem1))
+#         sem2 = self.drop(sem2)
+#         sem3 = self.conv3(sem2)
+#         y_psem_logits = sem3.squeeze(-2).transpose(1, 2)
+#         y_sem_pred = self.softmax(y_psem_logits)
+#
+#         return point_features, global_features, y_sem_pred, y_psem_logits
 
 
 # class backbone_sem(nn.Module):
