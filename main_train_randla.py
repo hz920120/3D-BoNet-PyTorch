@@ -3,8 +3,10 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from BoNetMLP import *
+from RandLANet import RandLA
 from helper_net import Ops
-from main_eval import Evaluation
+from main_eval_randla import Evaluation
+from dataset_randla_hz import Data_Configs_RandLA
 
 gpu_num = 0
 
@@ -55,16 +57,16 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     torch.set_num_threads(4)
-    from dataset import Data_S3DIS as Data
+    from dataset_randla_hz import Data_S3DIS as Data
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    writer = SummaryWriter('logs')
+    writer = SummaryWriter('logs_randla')
 
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 8
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
@@ -80,7 +82,9 @@ if __name__ == '__main__':
     MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/20220610')
 
     # backbone_pointnet2
-    backbone = backbone_pointnet2(is_train=True)
+    # backbone = backbone_pointnet2(is_train=True)
+    config = Data_Configs_RandLA()
+    backbone = RandLA(num_layers=config.num_layers, d_out=config.d_out,num_classes=config.sem_num)
     backbone = backbone.to(device)
     # backbone.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_001.pth')))
     count1 = count_parameters(backbone)
@@ -134,14 +138,19 @@ if __name__ == '__main__':
             print('ep : {}, lr : {}'.format(ep, lr))
         data.shuffle_train_files(ep)
         total_loss = 0
+        last_ep_time = datetime.now().strftime("%H:%M:%S")
         for i in range(total_train_batch_num):
-            bat_pc, _, _, bat_psem_onehot, bat_bbvert, bat_pmask = data.load_train_next_batch()
+            batchdata = data.load_train_next_batch_randla()
+            bat_bbvert = batchdata['bbvert_padded_labels']
+            bat_psem_onehot = batchdata['psem_onehot_labels']
+            bat_pmask = batchdata['pmask_padded_labels']
+            bat_pc = batchdata['features'].to(device).permute(0, 2, 1).contiguous()
             if torch.cuda.is_available():
-                bat_pc, _, _, bat_bbvert, bat_pmask, bat_psem_onehot = \
-                    torch.from_numpy(bat_pc).cuda(), _, _, torch.from_numpy(bat_bbvert).cuda(), \
-                    torch.from_numpy(bat_pmask).cuda(), torch.from_numpy(bat_psem_onehot).cuda()
+                bat_bbvert = bat_bbvert.to(device)
+                bat_psem_onehot = bat_psem_onehot.to(device)
+                bat_pmask = bat_pmask.to(device)
             # point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:9])
-            point_features, global_features, _, y_psem_logits = backbone(bat_pc[:, :, 0:9])
+            point_features, global_features, _, y_psem_logits = backbone(batchdata, device)
 
             get_loss_psem_ce = PsemCeLoss().cuda()
             psemce_loss = get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
@@ -188,22 +197,21 @@ if __name__ == '__main__':
             optimizer.step()
 
             now = datetime.now()
-
             current_time = now.strftime("%H:%M:%S")
 
-            if i % 10 == 0:
+            if i % 20 == 0:
                 print("-----------------------------------------------------------")
                 print('bbvert_loss : {}, bbvert_loss_l2 : {}, bbvert_loss_ce : {}, bbvert_loss_iou: {}'.format(
                     bbvert_loss, bbvert_loss_l2, bbvert_loss_ce, bbvert_loss_iou
                 ))
                 print("-----------------------------------------------------------")
                 print("time : {}, {} epoch  {}th iteration , loss is : {}".format(current_time,
-                                                                                  ep + 1, i, total_loss))
+                                                                                  ep, i, total_loss))
                 print('bbvert_loss: {}, bbscore_loss : {}, ms_loss : {}, psemce_loss : {}'.format(
                     bbvert_loss, bbscore_loss, ms_loss, psemce_loss
                 ))
                 print("-----------------------------------------------------------")
-                x_axis = epoch * total_train_batch_num + (batch_size * i)
+                x_axis = ep * total_train_batch_num * batch_size + (batch_size * i)
                 sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss, x_axis)
                 sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2, x_axis)
                 sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
@@ -217,9 +225,6 @@ if __name__ == '__main__':
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
         if ep % 5 == 0:
             print('saving model : ', datetime.now().strftime("%H:%M:%S"))
-            torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
-            torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
-            torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net_out', ep))
             PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
             params = {
                 'epoch': ep,
@@ -231,7 +236,7 @@ if __name__ == '__main__':
             }
             torch.save(params, PATH)
             print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
-            if ep < 30:
+            if ep == 0 or ep == 5 or ep == 15 or ep == 25:
                 continue
             result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
             print(result_path)
@@ -242,5 +247,11 @@ if __name__ == '__main__':
                 valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path, writer, ep)
                 if valid_mPre >= last_valid_mPre:
                     last_valid_mPre = valid_mPre
-                    torch.save(params, '{}/{}_epoch-{}_area-{}_mPre-{}'.format(os.path.join(BASE_DIR, save_model_dir), 'bonet_pointnet', ep, test_areas[0], valid_mPre))
+                    torch.save(params, '{}/{}_epoch-{}_area-{}_mPre-{}_mRec-{}'.format(os.path.join(BASE_DIR, save_model_dir), 'bonet_pointnet', ep, test_areas[0], valid_mPre, valid_mRec))
                 print('evaluation ends : ', datetime.now().strftime("%H:%M:%S"))
+        ep_end_time = datetime.now().strftime("%H:%M:%S")
+        print('ep {} start time : {}, end time : {}'.format(ep, last_ep_time, ep_end_time))
+        last_ep_time = ep_end_time
+        print("-----------------------------------------------------------")
+        print("--------------------ep ends here----==------------")
+        print("-----------------------------------------------------------")

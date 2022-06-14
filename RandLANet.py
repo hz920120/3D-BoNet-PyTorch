@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import Model.pytorch_lib as pt_utils
+import models.pytorch_lib as pt_utils
 from data_process import DataProcessing as DP
 import numpy as np
 from sklearn.metrics import confusion_matrix
@@ -14,9 +14,9 @@ class RandLA(nn.Module):
         self.num_classes = num_classes
         self.num_layers = num_layers
         self.d_out = d_out
-        self.class_weights = DP.get_class_weights('ScanNetV2')
+        self.class_weights = DP.get_class_weights('S3DIS')
 
-        self.fc0 = pt_utils.Conv1d(6, 8, kernel_size=1, bn=True)
+        self.fc0 = pt_utils.Conv1d(12, 8, kernel_size=1, bn=True)
 
         self.dilated_res_blocks = nn.ModuleList()
         d_in = 8
@@ -25,10 +25,10 @@ class RandLA(nn.Module):
             self.dilated_res_blocks.append(Dilated_res_block(d_in, d_out))
             d_in = 2 * d_out
 
-        self.global_conv1 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+        self.global_conv1 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True)
 
         d_out = d_in
-        self.decoder_0 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=True)
+        self.decoder_0 = pt_utils.Conv2d(d_in, d_out, kernel_size=(1, 1), bn=True)
 
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.num_layers):
@@ -42,14 +42,15 @@ class RandLA(nn.Module):
 
         self.point_conv1 = pt_utils.Conv2d(d_out, 128, kernel_size=(1,1), bn=True)
 
-        self.fc1 = pt_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=True)
-        self.fc2 = pt_utils.Conv2d(64, 32, kernel_size=(1,1), bn=True)
+        self.fc1 = pt_utils.Conv2d(d_out, 64, kernel_size=(1, 1), bn=True)
+        self.fc2 = pt_utils.Conv2d(64, 32, kernel_size=(1, 1), bn=True)
         self.dropout = nn.Dropout(0.5)
-        self.fc3 = pt_utils.Conv2d(32, self.num_classes, kernel_size=(1,1), bn=False, activation=None)
+        self.fc3 = pt_utils.Conv2d(32, self.num_classes, kernel_size=(1, 1), bn=False, activation=None)
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, end_points):
+    def forward(self, end_points, device):
 
-        features = end_points['features']  # Batch*channel*npoints = B,6,N
+        features = end_points['features'].to(device)  # B,12,N
         features = self.fc0(features) # B,8,N
 
         features = features.unsqueeze(dim=3)  # Batch*channel*npoints*1
@@ -57,9 +58,9 @@ class RandLA(nn.Module):
         # ###########################Encoder############################
         f_encoder_list = []
         for i in range(self.num_layers):
-            f_encoder_i = self.dilated_res_blocks[i](features, end_points['xyz'][i], end_points['neigh_idx'][i])
+            f_encoder_i = self.dilated_res_blocks[i](features, end_points['xyz'][i].to(device), end_points['neigh_idx'][i].to(device))
 
-            f_sampled_i = self.random_sample(f_encoder_i, end_points['sub_idx'][i])
+            f_sampled_i = self.random_sample(f_encoder_i, end_points['sub_idx'][i].to(device))
             features = f_sampled_i
             if i == 0:
                 f_encoder_list.append(f_encoder_i)
@@ -68,7 +69,7 @@ class RandLA(nn.Module):
         # ###########################Encoder############################
 
         global_features = self.global_conv1(features)
-        global_features = F.adaptive_avg_pool2d(global_features, output_size=(1,1))
+        global_features = F.adaptive_avg_pool2d(global_features, output_size=(1, 1))
         # global_features = F.avg_pool2d(global_features, kernel_size=(80,1))
         global_features = torch.squeeze(global_features, dim=-1)
         global_features = torch.squeeze(global_features, dim=-1)
@@ -78,7 +79,7 @@ class RandLA(nn.Module):
         # ###########################Decoder############################
         f_decoder_list = []
         for j in range(self.num_layers):
-            f_interp_i = self.nearest_interpolation(features, end_points['interp_idx'][-j - 1])
+            f_interp_i = self.nearest_interpolation(features, end_points['interp_idx'][-j - 1].to(device))
             f_decoder_i = self.decoder_blocks[j](torch.cat([f_encoder_list[-j - 2], f_interp_i], dim=1))
 
             features = f_decoder_i
@@ -96,9 +97,9 @@ class RandLA(nn.Module):
 
         end_points['logits'] = y_psem_logits # B,40,N
 
-        y_sem_pred = F.log_softmax(y_psem_logits, dim=1) # B,40,N
+        y_sem_pred = self.softmax(y_psem_logits)
 
-        return point_features, global_features, y_sem_pred.permute(0, 2, 1).contiguous(), y_psem_logits.permute(0, 2, 1).contiguous()
+        return point_features.transpose(1, 2), global_features, y_sem_pred.permute(0, 2, 1).contiguous(), y_psem_logits.permute(0, 2, 1).contiguous()
 
     @staticmethod
     def random_sample(feature, pool_idx):

@@ -285,6 +285,51 @@ class Data_S3DIS:
 
         return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
+    def load_test_next_batch_sq_randla(self, bat_files):
+        pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
+        for i in bat_files:
+            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
+                Data_S3DIS.load_fixed_points(i)
+            pc_xyzrgb.append(pc)
+            sem_labels.append(sem_label)
+            ins_labels.append(ins_label)
+            psem_onehot_labels.append(psem_onehot_label)
+            bbvert_padded_labels.append(bbvert_padded_label)
+            pmask_padded_labels.append(pmask_padded_label)
+        pc_xyzrgb = np.stack(pc_xyzrgb)
+        sem_labels = np.stack(sem_labels)
+        ins_labels = np.stack(ins_labels)
+        psem_onehot_labels = np.stack(psem_onehot_labels)
+        bbvert_padded_labels = np.stack(bbvert_padded_labels)
+        pmask_padded_labels = np.stack(pmask_padded_labels)
+
+        flat_inputs = self.tf_map(pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels,
+                                  pmask_padded_labels)
+
+        num_layers = self.num_layers
+        inputs = {}
+        inputs['xyz'] = []
+        for tmp in flat_inputs[:num_layers]:
+            inputs['xyz'].append((torch.from_numpy(tmp).float()))
+        inputs['neigh_idx'] = []
+        for tmp in flat_inputs[num_layers: 2 * num_layers]:
+            inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
+        inputs['sub_idx'] = []
+        for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
+            inputs['sub_idx'].append(torch.from_numpy(tmp).long())
+        inputs['interp_idx'] = []
+        for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
+            inputs['interp_idx'].append(torch.from_numpy(tmp).long())
+        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1, 2).float()  # B,C,N
+        inputs['sem_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
+        inputs['ins_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
+        inputs['psem_onehot_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).int()
+        inputs['bbvert_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 4]).float()
+        inputs['pmask_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 5]).float()
+
+        return inputs
+
+
     def load_test_next_batch_sq(self, bat_files):
         bat_pc = []
         bat_sem_labels = []
