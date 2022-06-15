@@ -3,7 +3,7 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from BoNetMLP import *
-from RandLANet import RandLA
+from RandLANet import RandLA, Psem_Loss_ignored
 from helper_net import Ops
 from main_eval_randla import Evaluation
 from dataset_randla_hz import Data_Configs_RandLA
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS/'
+    dataset_path = './Data_S3DIS_bak/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 8
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
@@ -75,6 +75,7 @@ if __name__ == '__main__':
 
     # some parameters
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
@@ -152,7 +153,8 @@ if __name__ == '__main__':
             # point_features, global_features, y_sem_pred, y_psem_logits = backbone(bat_pc[:, :, 0:9])
             point_features, global_features, _, y_psem_logits = backbone(batchdata, device)
 
-            get_loss_psem_ce = PsemCeLoss().cuda()
+            get_loss_psem_ce = Psem_Loss_ignored(device).cuda()
+            # get_loss_psem_ce = PsemCeLoss().cuda()
             psemce_loss = get_loss_psem_ce(y_psem_logits, bat_psem_onehot)
 
             y_bbvert_pred_raw, y_bbscore_pred_raw = bbox_net(global_features)
