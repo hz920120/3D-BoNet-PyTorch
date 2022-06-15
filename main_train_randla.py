@@ -31,7 +31,10 @@ if today.hour < 12:
 else:
     h = "12"
 
-LOG_DIR = ''
+is_colab = False
+colab_path = '/content/drive/MyDrive/3dbonet_checkpoints/checkpoints/'
+
+LOG_DIR = '' if not is_colab else colab_path
 save_model_dir = os.path.join(LOG_DIR, 'checkpoints')
 save_model_dir = os.path.join(save_model_dir, today.strftime('%Y%m%d') + h)
 if not os.path.exists(save_model_dir):
@@ -59,14 +62,15 @@ if __name__ == '__main__':
     torch.set_num_threads(4)
     from dataset_randla_hz import Data_S3DIS as Data
 
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if not is_colab else colab_path
 
-    writer = SummaryWriter('logs_randla')
+    summary_path = 'logs_randla' if not is_colab else colab_path +'logs_randla'
+    writer = SummaryWriter(summary_path)
 
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS/'
+    dataset_path = './Data_S3DIS_bak/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 8
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
