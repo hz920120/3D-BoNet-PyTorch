@@ -322,6 +322,11 @@ class Evaluation:
             return 0
 
 
+def findAllFile(base):
+    for root, ds, fs in os.walk(base):
+        for f in fs:
+            yield f
+
 #######################
 if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -335,7 +340,14 @@ if __name__ == '__main__':
     os.system('rm -rf %s' % (result_path))
     save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022061400')
     # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    PATH = os.path.join(save_model_dir, 'latest_model_0.pt')
-    data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-    Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+    # PATH = os.path.join(save_model_dir, 'latest_model_0.pt')
+    # data = Evaluation.load_data(dataset_path, train_areas, test_areas)
+    # Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
+    # Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+
+
+    for i in findAllFile(save_model_dir):
+        PATH = os.path.join(save_model_dir, i)
+        data = Evaluation.load_data(dataset_path, train_areas, test_areas)
+        Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
+        Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
