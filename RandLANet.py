@@ -139,7 +139,7 @@ class Psem_Loss_ignored(nn.Module):
     def __init__(self, device):
         super(Psem_Loss_ignored, self).__init__()
         self.class_weights = torch.from_numpy(DP.get_class_weights('S3DIS')).float().to(device)
-        self.cross_entropy = torch.nn.CrossEntropyLoss(weight=self.class_weights, ignore_index=-1)
+        self.cross_entropy = torch.nn.CrossEntropyLoss(weight=self.class_weights)
 
     def forward(self, y_psem_logits, Y_psem): # B,N,13. B,N,13
         y_psem_logits_rep = y_psem_logits.permute(0,2,1).contiguous() # B,13,N
