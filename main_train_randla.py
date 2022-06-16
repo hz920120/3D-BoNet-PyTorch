@@ -32,7 +32,7 @@ else:
     h = "12"
 
 is_colab = False
-colab_path = '/content/drive/MyDrive/3dbonet_checkpoints/checkpoints/'
+colab_path = '/content/drive/MyDrive/3dbonet_checkpoints/'
 
 LOG_DIR = '' if not is_colab else colab_path
 save_model_dir = os.path.join(LOG_DIR, 'checkpoints')
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
-    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/20220610')
+    MODEL_PATH = os.path.join(BASE_DIR, save_model_dir)
 
     # backbone_pointnet2
     # backbone = backbone_pointnet2(is_train=True)
