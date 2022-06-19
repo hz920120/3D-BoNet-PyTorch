@@ -103,7 +103,7 @@ class bbox_net(nn.Module):
         self.fc22 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, Data_Configs_RandLA.ins_max_num * 2 * 3)
         self.fc4 = nn.Linear(256, 256)
-        self.fc5 = nn.Linear(256, 24)
+        self.fc5 = nn.Linear(256, Data_Configs_RandLA.ins_max_num)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, global_features):
@@ -120,7 +120,7 @@ class bbox_net(nn.Module):
         # TODO how to define bbver?
         # bbvert = F.linear(self.fc3(b3), torch.randn(24 * 2 * 3, 24 * 2 * 3))
         bbvert = self.fc3(b3)
-        bbvert = torch.reshape(bbvert, [-1, 24, 2, 3])
+        bbvert = torch.reshape(bbvert, [-1, Data_Configs_RandLA.ins_max_num, 2, 3])
         points_min = torch.min(bbvert, dim=-2).values[:, :, None, :]
         points_max = torch.max(bbvert, dim=-2).values[:, :, None, :]
         # bb_center = self.sigmoid(self.fc3_2(b3))
