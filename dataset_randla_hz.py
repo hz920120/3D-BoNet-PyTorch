@@ -6,6 +6,8 @@ from random import shuffle
 import h5py
 import torch
 from data_process import DataProcessing
+from itertools import islice
+
 
 class Data_Configs_RandLA:
     sem_names = ['ceiling', 'floor', 'wall', 'beam', 'column', 'window', 'door',
@@ -15,8 +17,8 @@ class Data_Configs_RandLA:
     points_cc = 9
     sem_num = len(sem_names)
     ins_max_num = 24
-    train_pts_num = 4096
-    test_pts_num = 4096
+    train_pts_num = 40960
+    test_pts_num = 40960
     num_layers = 5
     k_n = 16
     sub_sampling_ratio = [4, 4, 4, 4, 2]
@@ -25,6 +27,7 @@ class Data_Configs_RandLA:
 
 class Data_S3DIS:
     def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4):
+        self.batch = Data_Configs_RandLA.train_pts_num // 4096
         self.root_folder_4_traintest = dataset_path
         self.train_files = self.load_full_file_list(areas=train_areas)
         self.test_files = self.load_full_file_list(areas=test_areas)
@@ -68,21 +71,27 @@ class Data_S3DIS:
                 for b in range(block_num):
                     all_files.append(f + '_' + str(b).zfill(4))
 
-        return all_files
+        return np.array_split(all_files, len(all_files) // self.batch)
+
+
 
     @staticmethod
     def load_raw_data_file_s3dis_block(file_path):
-        block_id = int(file_path[-4:])
-        file_path = file_path[0:-5]
 
-        fin = h5py.File(file_path, 'r')
-        coords = fin['coords'][block_id]
-        points = fin['points'][block_id]
-        semIns_labels = fin['labels'][block_id]
+        pc, sem_labels, ins_labels = None, None, None
 
-        pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
-        sem_labels = semIns_labels[:, 0]
-        ins_labels = semIns_labels[:, 1]
+        for i in file_path:
+            block_id = int(i[-4:])
+            i = i[0:-5]
+
+            fin = h5py.File(i, 'r')
+            coords = fin['coords'][block_id]
+            points = fin['points'][block_id]
+            semIns_labels = fin['labels'][block_id]
+
+            pc = np.concatenate([coords, points[:, 3:9]], axis=-1) if pc is None else np.append(pc, np.concatenate([coords, points[:, 3:9]], axis=-1), axis=0)
+            sem_labels = semIns_labels[:, 0] if sem_labels is None else np.append(sem_labels, semIns_labels[:, 0], axis=0)
+            ins_labels = semIns_labels[:, 1] if ins_labels is None else np.append(ins_labels, semIns_labels[:, 1], axis=0)
 
         ## if u need to visulize data, uncomment the following lines
         # from helper_data_plot import Plot as Plot
