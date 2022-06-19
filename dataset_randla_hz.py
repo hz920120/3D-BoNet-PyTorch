@@ -16,7 +16,7 @@ class Data_Configs_RandLA:
 
     points_cc = 9
     sem_num = len(sem_names)
-    ins_max_num = 24
+    ins_max_num = 36
     train_pts_num = 40960
     test_pts_num = 40960
     num_layers = 5

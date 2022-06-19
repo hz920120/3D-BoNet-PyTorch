@@ -93,7 +93,7 @@ negative_slope = 0.2
 #
 #         return y_sem_pred, sem4
 
-
+from dataset_randla_hz import Data_Configs_RandLA
 # 2. bbox
 class bbox_net(nn.Module):
     def __init__(self):
@@ -101,8 +101,7 @@ class bbox_net(nn.Module):
         self.fc1 = nn.Linear(512, 512)
         self.fc21 = nn.Linear(512, 256)
         self.fc22 = nn.Linear(256, 256)
-        # TODO 24*2*3
-        self.fc3 = nn.Linear(256, 24 * 2 * 3)
+        self.fc3 = nn.Linear(256, Data_Configs_RandLA.ins_max_num * 2 * 3)
         self.fc4 = nn.Linear(256, 256)
         self.fc5 = nn.Linear(256, 24)
         self.sigmoid = nn.Sigmoid()
