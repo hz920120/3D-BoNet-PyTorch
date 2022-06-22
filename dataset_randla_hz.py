@@ -17,8 +17,8 @@ class Data_Configs_RandLA:
     points_cc = 9
     sem_num = len(sem_names)
     ins_max_num = 36
-    train_pts_num = 40960
-    test_pts_num = 40960
+    train_pts_num = 4096
+    test_pts_num = 4096
     num_layers = 5
     k_n = 16
     sub_sampling_ratio = [4, 4, 4, 4, 2]
@@ -76,7 +76,29 @@ class Data_S3DIS:
 
 
     @staticmethod
-    def load_raw_data_file_s3dis_block(file_path):
+    def load_raw_data_file_s3dis_block(file_path, is_train=True):
+
+        if not is_train:
+            block_id = int(file_path[-4:])
+            file_path = file_path[0:-5]
+
+            fin = h5py.File(file_path, 'r')
+            coords = fin['coords'][block_id]
+            points = fin['points'][block_id]
+            semIns_labels = fin['labels'][block_id]
+
+            pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
+            sem_labels = semIns_labels[:, 0]
+            ins_labels = semIns_labels[:, 1]
+
+            ## if u need to visulize data, uncomment the following lines
+            # from helper_data_plot import Plot as Plot
+            # Plot.draw_pc(pc)
+            # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+            # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+
+            return pc, sem_labels, ins_labels
+
 
         pc, sem_labels, ins_labels = None, None, None
 
@@ -92,6 +114,29 @@ class Data_S3DIS:
             pc = np.concatenate([coords, points[:, 3:9]], axis=-1) if pc is None else np.append(pc, np.concatenate([coords, points[:, 3:9]], axis=-1), axis=0)
             sem_labels = semIns_labels[:, 0] if sem_labels is None else np.append(sem_labels, semIns_labels[:, 0], axis=0)
             ins_labels = semIns_labels[:, 1] if ins_labels is None else np.append(ins_labels, semIns_labels[:, 1], axis=0)
+
+        ## if u need to visulize data, uncomment the following lines
+        # from helper_data_plot import Plot as Plot
+        # Plot.draw_pc(pc)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+
+        return pc, sem_labels, ins_labels
+
+
+    @staticmethod
+    def load_raw_data_file_s3dis_block_eval(file_path):
+        block_id = int(file_path[-4:])
+        file_path = file_path[0:-5]
+
+        fin = h5py.File(file_path, 'r')
+        coords = fin['coords'][block_id]
+        points = fin['points'][block_id]
+        semIns_labels = fin['labels'][block_id]
+
+        pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
+        sem_labels = semIns_labels[:, 0]
+        ins_labels = semIns_labels[:, 1]
 
         ## if u need to visulize data, uncomment the following lines
         # from helper_data_plot import Plot as Plot
@@ -134,8 +179,8 @@ class Data_S3DIS:
         return gt_bbvert_padded, gt_pmask
 
     @staticmethod
-    def load_fixed_points(file_path):
-        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
+    def load_fixed_points(file_path, is_train=True):
+        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path, is_train)
 
         ### center xy within the block
         min_x = np.min(pc_xyzrgb[:, 0])
@@ -294,11 +339,11 @@ class Data_S3DIS:
 
         return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
-    def load_test_next_batch_sq_randla(self, bat_files):
+    def load_test_next_batch_sq_randla(self, bat_files, is_train=False):
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
         for i in bat_files:
             pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i)
+                Data_S3DIS.load_fixed_points(i, is_train)
             pc_xyzrgb.append(pc)
             sem_labels.append(sem_label)
             ins_labels.append(ins_label)
