@@ -153,7 +153,7 @@ class Evaluation:
 
         test_files = data.test_files
         print('total_test_batch_num_sq', len(test_files))
-        scene_list_dic = Eval_Tools.get_scenes(test_files)
+        scene_list_dic = Eval_Tools.get_scene_list(test_files)
 
         for scene_name in scene_list_dic:
             print('test scene:', scene_name)
@@ -348,14 +348,14 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS/'
+    dataset_path = './Data_S3DIS_bak/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
-    test_areas = ['Area_5']
+    test_areas = ['Area_1']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     batch_eval = False
     os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/colab_checkpoints/')
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022062212/')
     # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
     # PATH = os.path.join(save_model_dir, 'latest_model_55.pt')
     # data = Evaluation.load_data(dataset_path, train_areas, test_areas)
@@ -367,7 +367,7 @@ if __name__ == '__main__':
         PATH = os.path.join(save_model_dir, i)
         print(i)
         data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-        Evaluation.ttest(data, result_path, test_batch_size=1, MODEL_PATH=PATH)
+        Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
         valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
         print('{}_epoch-{}_area-{}_mPre-{}_mRec-{}'.format('bonet_pointnet', i, test_areas[0],
                                                                            valid_mPre, valid_mRec))

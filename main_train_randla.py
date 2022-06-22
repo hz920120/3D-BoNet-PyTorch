@@ -61,6 +61,7 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     torch.set_num_threads(4)
     from dataset_randla_hz import Data_S3DIS as Data
+    # from utils.s3dis_loader import S3DISDataset as Data
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if not is_colab else colab_path
 
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     #
     dataset_path = './Data_S3DIS_bak/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size = 8
+    batch_size = 4
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
@@ -123,7 +124,7 @@ if __name__ == '__main__':
     train_old = False
     epoch = -1
     if train_old:
-        check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model_30.pt'))
+        check_point = torch.load(os.path.join(MODEL_PATH, 'latest_model_45.pt'))
         backbone.load_state_dict(check_point['backbone_state_dict'])
         backbone.train()
         bbox_net.load_state_dict(check_point['bbox_state_dict'])
@@ -136,9 +137,10 @@ if __name__ == '__main__':
         print('load net, epoch : {},  total_loss : {}'.format(epoch, total_loss))
 
     print('total train batch num:', total_train_batch_num)
-    for ep in range(epoch + 1, epoch + 51, 1):
+    for ep in range(epoch + 1, epoch + 60, 1):
         for g in optimizer.param_groups:
-            lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
+            old_lr = g['lr']
+            lr = max(old_lr / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
             print('ep : {}, lr : {}'.format(ep, lr))
         data.shuffle_train_files(ep)
@@ -229,7 +231,7 @@ if __name__ == '__main__':
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
-        if ep % 5 == 0:
+        if ep % 1 == 0:
             print('saving model : ', datetime.now().strftime("%H:%M:%S"))
             PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
             params = {
@@ -242,7 +244,7 @@ if __name__ == '__main__':
             }
             torch.save(params, PATH)
             print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
-            if ep == 0 or ep == 5 or ep == 15 or ep == 25:
+            if ep != 70:
                 continue
             result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
             print(result_path)

@@ -16,7 +16,7 @@ class Data_Configs_RandLA:
 
     points_cc = 9
     sem_num = len(sem_names)
-    ins_max_num = 36
+    ins_max_num = 24
     train_pts_num = 4096
     test_pts_num = 4096
     num_layers = 5
@@ -27,7 +27,7 @@ class Data_Configs_RandLA:
 
 class Data_S3DIS:
     def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4):
-        self.batch = Data_Configs_RandLA.train_pts_num // 4096
+        # self.batch = Data_Configs_RandLA.train_pts_num // 4096
         self.root_folder_4_traintest = dataset_path
         self.train_files = self.load_full_file_list(areas=train_areas)
         self.test_files = self.load_full_file_list(areas=test_areas)
@@ -71,12 +71,64 @@ class Data_S3DIS:
                 for b in range(block_num):
                     all_files.append(f + '_' + str(b).zfill(4))
 
+        return all_files
+
+
+    def load_full_file_list_new(self, areas):
+        all_files = []
+        for a in areas:
+            print('check area:', a)
+            files = sorted(glob.glob(self.root_folder_4_traintest + a + '*.h5'))
+            for f in files:
+                fin = h5py.File(f, 'r')
+                coords = fin['coords'][:]
+                semIns_labels = fin['labels'][:].reshape([-1, 2])
+                ins_labels = semIns_labels[:, 1]
+                sem_labels = semIns_labels[:, 0]
+
+                data_valid = True
+                ins_idx = np.unique(ins_labels)
+                for i_i in ins_idx:
+                    if i_i <= -1: continue
+                    sem_labels_tp = sem_labels[ins_labels == i_i]
+                    unique_sem_labels = np.unique(sem_labels_tp)
+                    if len(unique_sem_labels) >= 2:
+                        print('>= 2 sem for an ins:', f)
+                        data_valid = False
+                        break
+                if not data_valid: continue
+                block_num = coords.shape[0]
+                for b in range(block_num):
+                    all_files.append(f + '_' + str(b).zfill(4))
+
         return np.array_split(all_files, len(all_files) // self.batch)
 
 
+    @staticmethod
+    def load_raw_data_file_s3dis_block(file_path):
+        block_id = int(file_path[-4:])
+        file_path = file_path[0:-5]
+
+        fin = h5py.File(file_path, 'r')
+        coords = fin['coords'][block_id]
+        points = fin['points'][block_id]
+        semIns_labels = fin['labels'][block_id]
+
+        pc = np.concatenate([coords, points[:, 3:9]], axis=-1)
+        sem_labels = semIns_labels[:, 0]
+        ins_labels = semIns_labels[:, 1]
+
+        ## if u need to visulize data, uncomment the following lines
+        # from helper_data_plot import Plot as Plot
+        # Plot.draw_pc(pc)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+        # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+
+        return pc, sem_labels, ins_labels
+
 
     @staticmethod
-    def load_raw_data_file_s3dis_block(file_path, is_train=True):
+    def load_raw_data_file_s3dis_block_new(file_path, is_train=True):
 
         if not is_train:
             block_id = int(file_path[-4:])
@@ -180,8 +232,8 @@ class Data_S3DIS:
 
     @staticmethod
     def load_fixed_points(file_path, is_train=True):
-        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path, is_train)
-
+        # pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path, is_train)
+        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
         ### center xy within the block
         min_x = np.min(pc_xyzrgb[:, 0])
         max_x = np.max(pc_xyzrgb[:, 0])
