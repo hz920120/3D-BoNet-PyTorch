@@ -71,7 +71,7 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 4
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
@@ -115,9 +115,9 @@ if __name__ == '__main__':
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
     optim_params = [
-        {'params': backbone.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
+        {'params': backbone.parameters(), 'lr': 0.01, 'betas': (0.9, 0.999), 'eps': 1e-08, 'lr_decay': 0.95, 'name': 'backbone'},
+        {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
+        {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'pmask_net'},
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
@@ -139,10 +139,15 @@ if __name__ == '__main__':
     print('total train batch num:', total_train_batch_num)
     for ep in range(epoch + 1, epoch + 60, 1):
         for g in optimizer.param_groups:
+            if ep == 0:
+                break
             old_lr = g['lr']
-            lr = max(old_lr / (2 ** (ep // 20)), 0.00001)
+            if 'backbone' == g['name']:
+                lr = old_lr * g['lr_decay']
+            else:
+                lr = max(old_lr / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
-            print('ep : {}, lr : {}'.format(ep, lr))
+            print('ep : {}, name : {},lr : {}'.format(ep, g['name'] ,lr))
         data.shuffle_train_files(ep)
         total_loss = 0
         last_ep_time = datetime.now().strftime("%H:%M:%S")
