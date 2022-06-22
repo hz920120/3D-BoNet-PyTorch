@@ -5,6 +5,7 @@ import scipy.io
 import torch
 import glob
 import h5py, sys
+from datetime import datetime
 import torch.nn as nn
 import torch.nn.functional as F
 import math
@@ -26,6 +27,19 @@ class Eval_Tools:
         if len(scene_list_dic) == 0:
             print('scene len is 0, error!');
             exit()
+        return scene_list_dic
+
+    @staticmethod
+    def get_scenes(res_blocks_list):
+        scene_list_dic = {}
+        for list in res_blocks_list:
+            for b in list:
+                scene_name = b.split('/')[-1][0:-len('_0000')]
+                if scene_name not in scene_list_dic: scene_list_dic[scene_name] = []
+                scene_list_dic[scene_name].append(b)
+            if len(scene_list_dic) == 0:
+                print('scene len is 0, error!');
+                exit()
         return scene_list_dic
 
     @staticmethod
@@ -139,7 +153,7 @@ class Evaluation:
 
         test_files = data.test_files
         print('total_test_batch_num_sq', len(test_files))
-        scene_list_dic = Eval_Tools.get_scene_list(test_files)
+        scene_list_dic = Eval_Tools.get_scenes(test_files)
 
         for scene_name in scene_list_dic:
             print('test scene:', scene_name)
@@ -180,7 +194,7 @@ class Evaluation:
             scipy.io.savemat(result_path + 'res_by_scene/' + scene_name + '.mat', scene_result, do_compression=True)
 
     @staticmethod
-    def evaluation(dataset_path, train_areas, result_path, writer=None, ep=None):
+    def evaluation(dataset_path: object, train_areas: object, result_path: object, writer: object = None, ep: object = None) -> object:
         from dataset_randla_hz import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
         mean_insSize_by_sem = Eval_Tools.get_mean_insSize_by_sem(dataset_path, train_areas)
@@ -316,10 +330,12 @@ class Evaluation:
             writer.add_scalar('valid_mRec', round(np.mean(rec_all), 4), ep)
             return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
         else:
+            print(round(np.mean(pre_all), 4))
+            print(round(np.mean(rec_all), 4))
             out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
                 round(np.mean(rec_all), 4))
             np.savez_compressed(out_file + '.npz', tp={0, 0})
-            return 0
+            return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
 
 
 def findAllFile(base):
@@ -332,22 +348,28 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
+    batch_eval = False
     os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022061400')
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/colab_checkpoints/')
     # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    # PATH = os.path.join(save_model_dir, 'latest_model_0.pt')
+    # PATH = os.path.join(save_model_dir, 'latest_model_55.pt')
     # data = Evaluation.load_data(dataset_path, train_areas, test_areas)
     # Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-    # Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
-
-
+    # valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+    # print('mPre-{}_mRec-{}'.format(valid_mPre+'', valid_mRec+''))
     for i in findAllFile(save_model_dir):
+        print('start eval  ' + datetime.now().strftime("%H:%M:%S"))
         PATH = os.path.join(save_model_dir, i)
+        print(i)
         data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-        Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-        Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+        Evaluation.ttest(data, result_path, test_batch_size=1, MODEL_PATH=PATH)
+        valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+        print('{}_epoch-{}_area-{}_mPre-{}_mRec-{}'.format('bonet_pointnet', i, test_areas[0],
+                                                                           valid_mPre, valid_mRec))
+
+
