@@ -71,7 +71,7 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 4
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
