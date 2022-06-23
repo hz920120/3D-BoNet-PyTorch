@@ -348,9 +348,9 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
-    test_areas = ['Area_1']
+    test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     batch_eval = False
