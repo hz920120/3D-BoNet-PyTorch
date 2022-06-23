@@ -115,7 +115,7 @@ if __name__ == '__main__':
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
     optim_params = [
-        {'params': backbone.parameters(), 'lr': 0.01, 'betas': (0.9, 0.999), 'eps': 1e-08, 'lr_decay': 0.95, 'name': 'backbone'},
+        {'params': backbone.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
         {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
         {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'pmask_net'},
     ]
@@ -139,14 +139,9 @@ if __name__ == '__main__':
     print('total train batch num:', total_train_batch_num)
     for ep in range(epoch + 1, epoch + 100, 1):
         for g in optimizer.param_groups:
-            if ep == 0:
-                break
-            old_lr = g['lr']
-            if 'backbone' == g['name']:
-                lr = old_lr * g['lr_decay']
-            else:
-                lr = max(old_lr / (2 ** (ep // 20)), 0.00001)
+            lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
+            print('ep : {}, lr : {}'.format(ep, lr))
             print('ep : {},      name : {},     lr : {}'.format(ep, g['name'], lr))
         data.shuffle_train_files(ep)
         total_loss = 0
