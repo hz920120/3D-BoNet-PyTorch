@@ -141,7 +141,7 @@ if __name__ == '__main__':
         for g in optimizer.param_groups:
             lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
-            print('ep : {}, lr : {}'.format(ep, lr))
+            # print('ep : {}, lr : {}'.format(ep, lr))
             print('ep : {},      name : {},     lr : {}'.format(ep, g['name'], lr))
         data.shuffle_train_files(ep)
         total_loss = 0
