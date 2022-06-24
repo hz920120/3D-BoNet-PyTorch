@@ -114,9 +114,9 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
-    lr_backbone = 0.05
-    lr_bbox = 0.005
-    lr_pmask = 0.05
+    lr_backbone = 0.005
+    lr_bbox = 0.0005
+    lr_pmask = 0.005
     optim_params = [
         {'params': backbone.parameters(), 'lr': lr_backbone, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
         {'params': bbox_net.parameters(), 'lr': lr_bbox, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
