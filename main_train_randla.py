@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
-    lr_backbone = 0.005
+    lr_backbone = 0.01
     lr_bbox = 0.0005
     lr_pmask = 0.005
     optim_params = [
@@ -143,7 +143,8 @@ if __name__ == '__main__':
     for ep in range(epoch + 1, epoch + 100, 1):
         for g in optimizer.param_groups:
             if g['name'] == 'backbone':
-                lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
+                lr = lr_backbone * (0.95 ** ep)
+                # lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
             elif g['name'] == 'bbox_net':
                 lr = max(lr_bbox / (2 ** (ep // 20)), 0.00001)
             else:
