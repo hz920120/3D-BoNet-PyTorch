@@ -114,10 +114,13 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
+    lr_backbone = 0.05
+    lr_bbox = 0.005
+    lr_pmask = 0.05
     optim_params = [
-        {'params': backbone.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
-        {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
-        {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'pmask_net'},
+        {'params': backbone.parameters(), 'lr': lr_backbone, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
+        {'params': bbox_net.parameters(), 'lr': lr_bbox, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
+        {'params': pmask_net.parameters(), 'lr': lr_pmask, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'pmask_net'},
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
@@ -139,7 +142,12 @@ if __name__ == '__main__':
     print('total train batch num:', total_train_batch_num)
     for ep in range(epoch + 1, epoch + 100, 1):
         for g in optimizer.param_groups:
-            lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
+            if g['name'] == 'backbone':
+                lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
+            elif g['name'] == 'bbox_net':
+                lr = max(lr_bbox / (2 ** (ep // 20)), 0.00001)
+            else:
+                lr = max(lr_pmask / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
             # print('ep : {}, lr : {}'.format(ep, lr))
             print('ep : {},      name : {},     lr : {}'.format(ep, g['name'], lr))
