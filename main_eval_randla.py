@@ -369,7 +369,11 @@ if __name__ == '__main__':
         data = Evaluation.load_data(dataset_path, train_areas, test_areas)
         Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
         valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
-        print('{}_epoch-{}_area-{}_mPre-{}_mRec-{}'.format('bonet_pointnet', i, test_areas[0],
+        # modify path
+        out_put_path = './logs'
+        torch.save({}, '{}/{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
+                                                                           valid_mPre, valid_mRec))
+        print('{}_area-{}_mPre-{}_mRec-{}'.format(i, test_areas[0],
                                                                            valid_mPre, valid_mRec))
 
 
