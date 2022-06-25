@@ -371,7 +371,7 @@ if __name__ == '__main__':
         valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
         # modify path
         out_put_path = './logs'
-        torch.save({}, '{}/{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
+        torch.save({}, '{}/epoch-{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
                                                                            valid_mPre, valid_mRec))
         print('{}_area-{}_mPre-{}_mRec-{}'.format(i, test_areas[0],
                                                                            valid_mPre, valid_mRec))
