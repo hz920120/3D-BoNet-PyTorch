@@ -91,9 +91,11 @@ if __name__ == '__main__':
     # backbone = backbone_pointnet2(is_train=True)
     config = Data_Configs_RandLA()
     backbone_path = ''
+    print('loading trained backbone : {}'.format(backbone_path))
     checkpoint = torch.load(backbone_path)
     backbone = RandLA(num_layers=config.num_layers, d_out=config.d_out, num_classes=config.sem_num).cuda()
     backbone.load_state_dict(checkpoint['backbone_state_dict'])
+    print('loading trained backbone successfully')
     # backbone.load_state_dict(torch.load(os.path.join(MODEL_PATH, 'backbone_out_001.pth')))
     count1 = count_parameters(backbone)
 
