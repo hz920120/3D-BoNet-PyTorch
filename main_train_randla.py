@@ -234,9 +234,9 @@ if __name__ == '__main__':
                 sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
                 sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou, x_axis)
                 sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss, x_axis)
-                sum_total_loss = writer.add_scalar('bbscore_loss', total_loss, x_axis)
-                sum_pmask_loss = writer.add_scalar('bbscore_loss', ms_loss, x_axis)
-                sum_psemce_loss = writer.add_scalar('bbscore_loss', psemce_loss, x_axis)
+                sum_total_loss = writer.add_scalar('total_loss', total_loss, x_axis)
+                sum_pmask_loss = writer.add_scalar('ms_loss', ms_loss, x_axis)
+                sum_psemce_loss = writer.add_scalar('psemce_loss', psemce_loss, x_axis)
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
@@ -255,6 +255,10 @@ if __name__ == '__main__':
             print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
             if ep != 100:
                 continue
+            # if ep < 10:
+            #     continue
+            # if ep % 3 != 0:
+            #     continue
             result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
             print(result_path)
             last_valid_mPre = 0
