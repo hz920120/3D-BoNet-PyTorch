@@ -90,6 +90,20 @@ class DataProcessing:
         return xyz_aug, color_aug, idx_aug, label_aug
 
     @staticmethod
+    def data_aug_new(xyz, color, labels, ins_labels, idx, num_out):
+        num_in = len(xyz)
+        dup = np.random.choice(num_in, num_out - num_in)
+        xyz_dup = xyz[dup, ...]
+        xyz_aug = np.concatenate([xyz, xyz_dup], 0)
+        color_dup = color[dup, ...]
+        color_aug = np.concatenate([color, color_dup], 0)
+        idx_dup = list(range(num_in)) + list(dup)
+        idx_aug = idx[idx_dup]
+        label_aug = labels[idx_dup]
+        ins_label_aug = ins_labels[idx_dup]
+        return xyz_aug, color_aug, idx_aug, label_aug, ins_label_aug
+
+    @staticmethod
     def shuffle_idx(x):
         # random shuffle the index
         idx = np.arange(len(x))
@@ -104,7 +118,7 @@ class DataProcessing:
         return data_list
 
     @staticmethod
-    def grid_sub_sampling(points, features=None, labels=None, grid_size=0.1, verbose=0):
+    def grid_sub_sampling(points, features=None, labels=None, ins_labels=None, grid_size=0.1, verbose=0):
         """
         CPP wrapper for a grid sub_sampling (method = barycenter for points and features
         :param points: (N, 3) matrix of input points
@@ -120,9 +134,9 @@ class DataProcessing:
         elif labels is None:
             return cpp_subsampling.compute(points, features=features, sampleDl=grid_size, verbose=verbose)
         elif features is None:
-            return cpp_subsampling.compute(points, classes=labels, sampleDl=grid_size, verbose=verbose)
+            return cpp_subsampling.compute(points, classes=labels, ins_labels=ins_labels, sampleDl=grid_size, verbose=verbose)
         else:
-            return cpp_subsampling.compute(points, features=features, classes=labels, sampleDl=grid_size,
+            return cpp_subsampling.compute(points, features=features, ins_labels=ins_labels, classes=labels, sampleDl=grid_size,
                                            verbose=verbose)
 
     @staticmethod
