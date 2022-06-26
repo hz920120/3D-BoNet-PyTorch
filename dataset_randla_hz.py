@@ -264,6 +264,39 @@ class Data_S3DIS:
 
         return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
 
+    @staticmethod
+    def load_fixed_points_randla(file_path, is_train=True):
+        pc_xyzrgb, sem_labels, ins_labels = Data_S3DIS.load_raw_data_file_s3dis_block(file_path)
+
+        coord_mean = np.mean(pc_xyzrgb[:, :3], axis=0)
+        pc_xyzrgb[:, :3] -= coord_mean
+        pc_xyzrgb[:, 3:6] *= 255
+        pc_xyzrgb[:, 3:6] /= 127.5 - 1
+
+
+        # ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3])  # reserved for final visualization
+        # use_zero_one_center = True
+        # if use_zero_one_center:
+        #     pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x) / np.maximum((max_x - min_x), 1e-3)
+        #     pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y) / np.maximum((max_y - min_y), 1e-3)
+        #     pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z) / np.maximum((max_z - min_z), 1e-3)
+
+        # pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1)
+
+
+        ########
+        sem_labels = sem_labels.reshape([-1])
+        ins_labels = ins_labels.reshape([-1])
+        bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.get_bbvert_pmask_labels(pc_xyzrgb, ins_labels)
+
+        psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs_RandLA.sem_num), dtype=np.int8)
+        for idx, s in enumerate(sem_labels):
+            if sem_labels[idx] == -1: continue  # invalid points
+            sem_idx = Data_Configs_RandLA.sem_ids.index(s)
+            psem_onehot_labels[idx, sem_idx] = 1
+
+        return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
+
     def load_train_next_batch(self):
         bat_files = self.train_files[self.train_next_bat_index *
                                      self.train_batch_size:( self.train_next_bat_index + 1) * self.train_batch_size]
@@ -299,7 +332,7 @@ class Data_S3DIS:
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [],[],[],[],[],[]
         for i in bat_files:
             pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i)
+                Data_S3DIS.load_fixed_points_randla(i)
             pc_xyzrgb.append(pc)
             sem_labels.append(sem_label)
             ins_labels.append(ins_label)
@@ -395,7 +428,7 @@ class Data_S3DIS:
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
         for i in bat_files:
             pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i, is_train)
+                Data_S3DIS.load_fixed_points_randla(i, is_train)
             pc_xyzrgb.append(pc)
             sem_labels.append(sem_label)
             ins_labels.append(ins_label)
