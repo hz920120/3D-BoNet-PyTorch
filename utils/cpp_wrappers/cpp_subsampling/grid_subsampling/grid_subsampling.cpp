@@ -8,6 +8,8 @@ void grid_subsampling(vector<PointXYZ>& original_points,
                       vector<float>& subsampled_features,
                       vector<int>& original_classes,
                       vector<int>& subsampled_classes,
+                      vector<int>& original_ins_labels,
+                      vector<int>& subsampled_ins_labels,
                       float sampleDl,
                       int verbose) {
 
@@ -20,6 +22,7 @@ void grid_subsampling(vector<PointXYZ>& original_points,
 	// Dimension of the features
 	size_t fdim = original_features.size() / N;
 	size_t ldim = original_classes.size() / N;
+	size_t ildim = original_ins_labels.size() / N;
 
 	// Limits of the cloud
 	PointXYZ minCorner = min_point(original_points);
@@ -60,12 +63,16 @@ void grid_subsampling(vector<PointXYZ>& original_points,
 			data.emplace(mapIdx, SampledData(fdim, ldim));
 
 		// Fill the sample map
-		if (use_feature && use_classes)
-			data[mapIdx].update_all(p, original_features.begin() + i * fdim, original_classes.begin() + i * ldim);
+		if (use_feature && use_classes){
+
+			data[mapIdx].update_all(p, original_features.begin() + i * fdim, original_classes.begin() + i * ldim,
+			original_ins_labels.begin() + i * ildim);
+
+			}
 		else if (use_feature)
 			data[mapIdx].update_features(p, original_features.begin() + i * fdim);
 		else if (use_classes)
-			data[mapIdx].update_classes(p, original_classes.begin() + i * ldim);
+			data[mapIdx].update_classes(p, original_classes.begin() + i * ldim, original_ins_labels.begin() + i * ildim);
 		else
 			data[mapIdx].update_points(p);
 
@@ -76,12 +83,15 @@ void grid_subsampling(vector<PointXYZ>& original_points,
 
 	}
 
+
 	// Divide for barycentre and transfer to a vector
 	subsampled_points.reserve(data.size());
 	if (use_feature)
 		subsampled_features.reserve(data.size() * fdim);
-	if (use_classes)
+	if (use_classes){
 		subsampled_classes.reserve(data.size() * ldim);
+		subsampled_ins_labels.reserve(data.size() * ildim);
+		}
 	for (auto& v : data)
 	{
 		subsampled_points.push_back(v.second.point * (1.0 / v.second.count));
@@ -96,9 +106,12 @@ void grid_subsampling(vector<PointXYZ>& original_points,
 		}
 		if (use_classes)
 		{
-		    for (int i = 0; i < ldim; i++)
+		    for (int i = 0; i < ldim; i++) {
 		        subsampled_classes.push_back(max_element(v.second.labels[i].begin(), v.second.labels[i].end(),
 		        [](const pair<int, int>&a, const pair<int, int>&b){return a.second < b.second;})->first);
+		        subsampled_ins_labels.push_back(max_element(v.second.ins_labels[i].begin(), v.second.ins_labels[i].end(),
+		        [](const pair<int, int>&a, const pair<int, int>&b){return a.second < b.second;})->first);
+		        }
 		}
 	}
 
