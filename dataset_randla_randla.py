@@ -1,4 +1,7 @@
 import glob
+import os
+import pickle
+
 import numpy as np
 import random
 import copy
@@ -6,6 +9,7 @@ from random import shuffle
 import h5py
 import torch
 from data_process import DataProcessing
+from utils.helper_ply import read_ply
 from itertools import islice
 
 
@@ -17,8 +21,8 @@ class Data_Configs_RandLA:
     points_cc = 9
     sem_num = len(sem_names)
     ins_max_num = 24
-    train_pts_num = 4096
-    test_pts_num = 4096
+    noise_init = 3.5
+    n_pts = 40960
     num_layers = 5
     k_n = 16
     sub_sampling_ratio = [4, 4, 4, 4, 2]
@@ -26,50 +30,79 @@ class Data_Configs_RandLA:
 
 
 class Data_S3DIS:
-    def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4):
-        # self.batch = Data_Configs_RandLA.train_pts_num // 4096
+    def __init__(self, dataset_path, train_areas, test_areas, sub_grid_size=0.04, is_train=True, train_batch_size=4):
+        self.trees = {'train': [], 'valid': []}
+        self.colors = {'train': [], 'valid': []}
+        self.labels = {'train': [], 'valid': []}
+        self.ins_labels = {'train': [], 'valid': []}
+        self.split = 'train' if is_train else 'valid'
+        self.noise_init = Data_Configs_RandLA.noise_init
+        self.n_pts = Data_Configs_RandLA.n_pts
+        self.val_proj = []
+        self.val_proj_labels = []
+        self.val_proj_ins_labels = []
         self.root_folder_4_traintest = dataset_path
+        self.sub_grid_size = sub_grid_size
+        self.tree_path = os.path.join(dataset_path, 'input_{:.3f}'.format(self.sub_grid_size))
         self.train_files = self.load_full_file_list(areas=train_areas)
-        self.test_files = self.load_full_file_list(areas=test_areas)
+        self.test_files = self.load_full_file_list(areas=test_areas, is_train=False)
         print('train files:', len(self.train_files))
         print('test files:', len(self.test_files))
 
+
         self.ins_max_num = Data_Configs_RandLA.ins_max_num
         self.train_batch_size = train_batch_size
-        self.total_train_batch_num = len(self.train_files) // self.train_batch_size
+        # self.total_train_batch_num = len(self.train_files) // self.train_batch_size
+        self.total_train_batch_num = len(self.train_files)
 
         self.num_layers = Data_Configs_RandLA.num_layers
         self.k_n = Data_Configs_RandLA.k_n
         self.sub_sampling_ratio = Data_Configs_RandLA.sub_sampling_ratio
 
         self.train_next_bat_index = 0
+        self.possibility = {'train': [], 'valid': []}
+        self.min_possibility = {'train': [], 'valid': []}
 
-    def load_full_file_list(self, areas):
+        for i, tree in enumerate(self.colors[self.split]):
+            # 第i个点云的颜色数据，每个点都随机了一个possibility值
+            #print(np.random.rand(tree.data.shape[0]))
+            self.possibility[self.split].append(np.random.rand(tree.data.shape[0]) * 1e-3)  # (0,0.001)
+            self.min_possibility[self.split].append(float(np.min(self.possibility[self.split][-1])))
+            # 对刚加进来的点云的possibility值，找出最小值来，这样的话每个点云，都有一个min_possibility
+
+    def load_full_file_list(self, areas, is_train=True):
         all_files = []
         for a in areas:
             print('check area:', a)
-            files = sorted(glob.glob(self.root_folder_4_traintest + a + '*.h5'))
-            for f in files:
-                fin = h5py.File(f, 'r')
-                coords = fin['coords'][:]
-                semIns_labels = fin['labels'][:].reshape([-1, 2])
-                ins_labels = semIns_labels[:, 1]
-                sem_labels = semIns_labels[:, 0]
+            file_path = os.path.join(self.root_folder_4_traintest, 'original_ply', a + '*.ply')
+            files = sorted(glob.glob(file_path))
+            for i, f in enumerate(files):
+                name = str(f) + '_' + str(i).zfill(4)
+                data = read_ply(f)
+                sub_colors = np.vstack((data['red'], data['green'], data['blue'])).T
+                sub_labels = data['class']
+                ins_labels = data['ins_labels']
+                cloud_name = f.split('/')[-1][:-4]
+                kd_tree_file = os.path.join(self.tree_path, '{:s}_KDTree.pkl'.format(cloud_name))
+                with open(kd_tree_file, 'rb') as f_tree:
+                    search_tree = pickle.load(f_tree)
 
-                data_valid = True
-                ins_idx = np.unique(ins_labels)
-                for i_i in ins_idx:
-                    if i_i <= -1: continue
-                    sem_labels_tp = sem_labels[ins_labels == i_i]
-                    unique_sem_labels = np.unique(sem_labels_tp)
-                    if len(unique_sem_labels) >= 2:
-                        print('>= 2 sem for an ins:', f)
-                        data_valid = False
-                        break
-                if not data_valid: continue
-                block_num = coords.shape[0]
-                for b in range(block_num):
-                    all_files.append(f + '_' + str(b).zfill(4))
+                cloud_split = 'valid'
+                if is_train:
+                    cloud_split = 'train'
+                self.trees[cloud_split].append(search_tree)
+                self.colors[cloud_split].append(sub_colors)
+                self.labels[cloud_split].append(sub_labels)
+                self.ins_labels[cloud_split].append(ins_labels)
+
+                if not is_train:
+                    proj_file = os.path.join(self.tree_path, '{:s}_proj.pkl'.format(cloud_name))
+                    with open(proj_file, 'rb') as f:
+                        proj_idx, proj_labels = pickle.load(f)
+                    self.val_proj.append(proj_idx)
+                    self.val_proj_labels.append(proj_labels)
+                    self.val_proj_ins_labels.append(proj_labels)
+                all_files.append(name)
 
         return all_files
 
@@ -327,50 +360,153 @@ class Data_S3DIS:
         return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
     def load_train_next_batch_randla(self):
-        bat_files = self.train_files[self.train_next_bat_index *
-                                     self.train_batch_size:(self.train_next_bat_index + 1) * self.train_batch_size]
-        pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [],[],[],[],[],[]
-        for i in bat_files:
-            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i)
-            pc_xyzrgb.append(pc)
-            sem_labels.append(sem_label)
-            ins_labels.append(ins_label)
-            psem_onehot_labels.append(psem_onehot_label)
-            bbvert_padded_labels.append(bbvert_padded_label)
-            pmask_padded_labels.append(pmask_padded_label)
-        pc_xyzrgb = np.stack(pc_xyzrgb)
-        sem_labels = np.stack(sem_labels)
-        ins_labels = np.stack(ins_labels)
-        psem_onehot_labels = np.stack(psem_onehot_labels)
-        bbvert_padded_labels = np.stack(bbvert_padded_labels)
-        pmask_padded_labels = np.stack(pmask_padded_labels)
+        # Choose the cloud with the lowest probability
+        # 根据min_possibility的值选一个点云出来
+        cloud_idx = int(np.argmin(self.min_possibility[self.split]))
 
-        flat_inputs = self.tf_map(pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels)
+        # Choose the point with the minimum of possibility in the cloud as query point
+        # 对于找出来的点云的所有点，根据possibility的值找出一个点来
+        point_ind = np.argmin(self.possibility[self.split][cloud_idx])
 
-        num_layers = self.num_layers
-        inputs = {}
-        inputs['xyz'] = []
-        for tmp in flat_inputs[:num_layers]:
-            inputs['xyz'].append((torch.from_numpy(tmp).float()))
-        inputs['neigh_idx'] = []
-        for tmp in flat_inputs[num_layers: 2 * num_layers]:
-            inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
-        inputs['sub_idx'] = []
-        for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
-            inputs['sub_idx'].append(torch.from_numpy(tmp).long())
-        inputs['interp_idx'] = []
-        for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
-            inputs['interp_idx'].append(torch.from_numpy(tmp).long())
-        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1, 2).float() # B,C,N
-        inputs['sem_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
-        inputs['ins_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
-        inputs['psem_onehot_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).int()
-        inputs['bbvert_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 4]).float()
-        inputs['pmask_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 5]).float()
+        # Get all points within the cloud from tree structure
+        # KDTree中保存了点云的 x,y,z值， N*3
+        points = np.array(self.trees[self.split][cloud_idx].data, copy=False)
 
-        self.train_next_bat_index += 1
-        return inputs
+        # Center point of input region
+        # 提取出找到的种子点的坐标
+        center_point = points[point_ind, :].reshape(1, -1)
+        # print(cloud_idx, center_point)
+
+        # Add noise to the center point
+        noise = np.random.normal(scale=self.noise_init / 10, size=center_point.shape)
+        pick_point = center_point + noise.astype(center_point.dtype)
+
+        # Check if the number of points in the selected cloud is less than the predefined num_points
+        if len(points) < self.n_pts:
+            # Query all points within the cloud   shape:(2,1,k) distance,index
+            queried_idx = self.trees[self.split][cloud_idx].query(pick_point, k=len(points))[1][0]
+        else:
+            # Query the predefined number of points
+            queried_idx = self.trees[self.split][cloud_idx].query(pick_point, k=self.n_pts)[1][0]
+
+        # shuffle index
+        idx = np.arange(len(queried_idx))
+        np.random.shuffle(idx)
+        queried_idx = queried_idx[idx]
+
+        # Get corresponding points and colors based on the index
+        queried_pc_xyz = points[queried_idx]
+        queried_pc_xyz = queried_pc_xyz - pick_point
+        queried_pc_colors = self.colors[self.split][cloud_idx][queried_idx]
+        queried_pc_labels = self.labels[self.split][cloud_idx][queried_idx]
+
+        # 到此为止，先选了一个点云，然后在里面选了一个点，以这个点为中心，找到了与其最近的k个点，打乱顺序并进行中心化，得到 x y z red green blue label
+
+        # Update the possibility of the selected points
+        # 按照与选取的种子点的距离远近，来增加其possibility值，距离越近，加的越多
+        dists = np.sum(np.square((points[queried_idx] - pick_point).astype(np.float32)), axis=1)
+        delta = np.square(1 - dists / np.max(dists))
+        self.possibility[self.split][cloud_idx][queried_idx] += delta
+        self.min_possibility[self.split][cloud_idx] = float(np.min(self.possibility[self.split][cloud_idx]))
+
+        # up_sampled with replacement
+        if len(points) < self.n_pts:
+            queried_pc_xyz, queried_pc_colors, queried_idx, queried_pc_labels = DataProcessing.data_aug(queried_pc_xyz,
+                                                                                            queried_pc_colors,
+                                                                                            queried_pc_labels,
+                                                                                            queried_idx, self.n_pts)
+
+        features = np.concatenate([queried_pc_xyz, queried_pc_colors], axis=-1)
+        input_points = None
+        input_neighbors = None
+        input_pools = None
+        input_up_samples = None
+
+        for i in range(self.num_layers):
+            # (1,N1,3)
+            batch_queried_pc_xyz = queried_pc_xyz[np.newaxis, :]
+            # (1,N1,k)
+            batch_neighbor_idx = DataProcessing.knn_search(batch_queried_pc_xyz, batch_queried_pc_xyz, self.k_n)
+            # 对输入的点云，求每个点云的k近邻点的索引 (N1,K)
+            neighbour_idx = np.squeeze(batch_neighbor_idx, axis=0)
+
+            # 对点云及其k近邻点索引进行下采样，因为前面将点云数据打乱了，所以直接去减 1/n的点等价于随机下采样
+            sub_points = queried_pc_xyz[:np.shape(queried_pc_xyz)[0] // self.sub_sampling_ratio[i], :]
+            pool_i = neighbour_idx[:np.shape(queried_pc_xyz)[0] // self.sub_sampling_ratio[i], :]
+            # 寻找初始点云在下采样点云中的最近邻点的索引
+            batch_sub_points = sub_points[np.newaxis, :]
+            batch_up_i = DataProcessing.knn_search(batch_sub_points, batch_queried_pc_xyz, 1)
+            up_i = np.squeeze(batch_up_i, axis=0)
+
+            if input_points is None:
+                input_points = queried_pc_xyz
+            else:
+                input_points = np.concatenate((input_points, queried_pc_xyz), axis=0)
+
+            if input_neighbors is None:
+                input_neighbors = neighbour_idx
+            else:
+                input_neighbors = np.concatenate((input_neighbors, neighbour_idx), axis=0)
+
+            if input_pools is None:
+                input_pools = pool_i
+            else:
+                input_pools = np.concatenate((input_pools, pool_i), axis=0)
+
+            if input_up_samples is None:
+                input_up_samples = up_i
+            else:
+                input_up_samples = np.concatenate((input_up_samples, up_i), axis=0)
+
+            queried_pc_xyz = sub_points
+
+        input_points = input_points.transpose((1, 0))  # 3, N
+
+        return torch.from_numpy(input_points), torch.from_numpy(input_neighbors), torch.from_numpy(
+            input_pools), torch.from_numpy(input_up_samples), torch.from_numpy(features), torch.from_numpy(
+            queried_pc_labels)
+        # bat_files = self.train_files[0]
+        # pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [],[],[],[],[],[]
+        # for i in bat_files:
+        #     pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
+        #         Data_S3DIS.load_fixed_points(i)
+        #     pc_xyzrgb.append(pc)
+        #     sem_labels.append(sem_label)
+        #     ins_labels.append(ins_label)
+        #     psem_onehot_labels.append(psem_onehot_label)
+        #     bbvert_padded_labels.append(bbvert_padded_label)
+        #     pmask_padded_labels.append(pmask_padded_label)
+        # pc_xyzrgb = np.stack(pc_xyzrgb)
+        # sem_labels = np.stack(sem_labels)
+        # ins_labels = np.stack(ins_labels)
+        # psem_onehot_labels = np.stack(psem_onehot_labels)
+        # bbvert_padded_labels = np.stack(bbvert_padded_labels)
+        # pmask_padded_labels = np.stack(pmask_padded_labels)
+        #
+        # flat_inputs = self.tf_map(pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels)
+        #
+        # num_layers = self.num_layers
+        # inputs = {}
+        # inputs['xyz'] = []
+        # for tmp in flat_inputs[:num_layers]:
+        #     inputs['xyz'].append((torch.from_numpy(tmp).float()))
+        # inputs['neigh_idx'] = []
+        # for tmp in flat_inputs[num_layers: 2 * num_layers]:
+        #     inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
+        # inputs['sub_idx'] = []
+        # for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
+        #     inputs['sub_idx'].append(torch.from_numpy(tmp).long())
+        # inputs['interp_idx'] = []
+        # for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
+        #     inputs['interp_idx'].append(torch.from_numpy(tmp).long())
+        # inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1, 2).float() # B,C,N
+        # inputs['sem_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
+        # inputs['ins_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
+        # inputs['psem_onehot_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).int()
+        # inputs['bbvert_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 4]).float()
+        # inputs['pmask_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 5]).float()
+
+        # self.train_next_bat_index += 1
 
     def tf_map(self, pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels):
         features = pc_xyzrgb
