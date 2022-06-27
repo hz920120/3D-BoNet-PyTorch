@@ -98,22 +98,31 @@ class Eval_Tools:
         for a in train_areas:
             print('get mean insSize, check train area:', a)
             files = sorted(glob.glob(dataset_path + a + '*.h5'))
+            ins_labels = []
+            sem_labels = []
             for file_path in files:
                 a_file = open(file_path, "rb")
                 blocks = pickle.load(a_file)
                 a_file.close()
-                sub_ply_file = {}
+                ins_labels = []
+                sem_labels = []
                 for name, block in blocks.items():
-                    sub_ply_file = block
-                semIns_labels = fin['labels'][:].reshape([-1, 2])
-                ins_labels = semIns_labels[:, 1]
-                sem_labels = semIns_labels[:, 0]
+                    sub_ply_file = block['sub_ply_file']
+                    classes = sub_ply_file['sub_labels']
+                    ins = sub_ply_file['sub_ins_labels']
+                    if len(classes[1])==1:
+                        classes = classes.squeeze()
+                    if len(ins[1])==1:
+                        ins = ins.squeeze()
+                    sem_labels += classes
+                    ins_labels += ins
 
-                ins_idx = np.unique(ins_labels)
-                for ins_id in ins_idx:
-                    tmp = (ins_labels == ins_id)
-                    sem = scipy.stats.mode(sem_labels[tmp])[0][0]
-                    mean_insSize_by_sem[sem].append(np.sum(np.asarray(tmp, dtype=np.float32)))
+
+            ins_idx = np.unique(ins_labels)
+            for ins_id in ins_idx:
+                tmp = (ins_labels == ins_id)
+                sem = scipy.stats.mode(sem_labels[tmp])[0][0]
+                mean_insSize_by_sem[sem].append(np.sum(np.asarray(tmp, dtype=np.float32)))
 
         for sem in mean_insSize_by_sem: mean_insSize_by_sem[sem] = np.mean(mean_insSize_by_sem[sem])
 
