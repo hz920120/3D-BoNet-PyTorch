@@ -53,6 +53,7 @@ def convert_pc2ply(anno_path, save_path, scene_name):
     blocks = room_to_blocks(pc_label, size=2, stride=1.5, scene_name=scene_name)
     os.mkdir(join(dataset_path, 'sample_ori_dir')) if not exists(join(dataset_path, 'sample_ori_dir')) else None
     h5_path = join(dataset_path, 'sample_ori_dir', scene_name + '.h5')
+
     save_dic(h5_path, blocks)
     sub_save_path = join(dataset_path, 'sample_ori_dir', 'input_{:.3f}'.format(sub_grid_size))
     limit = np.amax(pc_label[:, 0:3], axis=0)
@@ -68,13 +69,14 @@ def save_sub(sub_save_path, blocks, limit):
         sub_xyz, sub_colors, sub_labels, sub_ins_labels = DP.grid_sub_sampling(xyz, colors, labels, ins_labels,
                                                                                sub_grid_size)
         sub_colors /= 255.0
-        # limit_x = np.array(limit[0])
-        # limit_y = np.array(limit[1])
-        # limit_z = np.array(limit[2])
+        limit_x = np.array(limit[0])
+        limit_y = np.array(limit[1])
+        limit_z = np.array(limit[2])
 
         os.mkdir(sub_save_path) if not exists(sub_save_path) else None
         sub_ply_file = join(sub_save_path, name + '.ply')
-        wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels],['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels'])
+        wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels , limit_x, limit_y, limit_z],
+                     ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_x', 'limit_x'])
 
         search_tree = KDTree(sub_xyz)
         kd_tree_file = join(sub_save_path, name + '_KDTree.pkl')
@@ -139,4 +141,9 @@ if __name__ == '__main__':
         elements = str(annotation_path).split('/')
         out_file_name = elements[-3] + '_' + elements[-2] + out_format
         scene_name = elements[-3] + '_' + elements[-2]
+        h5_path = join(dataset_path, 'sample_ori_dir', scene_name + '.h5')
+        file_exists = os.path.exists(h5_path)
+        if file_exists:
+            print('{} exists'.format(h5_path))
+            continue
         convert_pc2ply(annotation_path, join(original_pc_folder, out_file_name), scene_name)
