@@ -50,17 +50,22 @@ def convert_pc2ply(anno_path, save_path):
     xyz_min = np.amin(pc_label, axis=0)[0:3]
     pc_label[:, 0:3] -= xyz_min
 
+    limit = np.amax(pc_label[:, 0:3], axis=0)
     xyz = pc_label[:, :3].astype(np.float32)
     colors = pc_label[:, 3:6].astype(np.uint8)
     labels = pc_label[:, 6].astype(np.uint8)
     ins_labels = pc_label[:, 7].astype(np.uint8)
-    wp.write_ply(save_path, (xyz, colors, labels, ins_labels), ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels'])
+    limit_x = np.array(limit[0])
+    limit_y = np.array(limit[1])
+    limit_z = np.array(limit[2])
+
+    wp.write_ply(save_path, (xyz, colors, labels, ins_labels, limit_x, limit_y, limit_z), ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_y', 'limit_z'])
 
     # save sub_cloud and KDTree file
     sub_xyz, sub_colors, sub_labels, sub_ins_labels = DP.grid_sub_sampling(xyz, colors, labels, ins_labels, sub_grid_size)
     sub_colors = sub_colors / 255.0
     sub_ply_file = join(sub_pc_folder, save_path.split('/')[-1][:-4] + '.ply')
-    wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels], ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels'])
+    wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels, limit_x, limit_y, limit_z], ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_y', 'limit_z'])
 
     search_tree = KDTree(sub_xyz)
     kd_tree_file = join(sub_pc_folder, str(save_path.split('/')[-1][:-4]) + '_KDTree.pkl')

@@ -257,10 +257,10 @@ def write_ply(filename, field_list, field_names, triangular_faces=None):
             return False    
 
     # check all fields have the same number of data
-    n_points = [field.shape[0] for field in field_list]
-    if not np.all(np.equal(n_points, n_points[0])):
-        print('wrong field dimensions')
-        return False    
+    # n_points = [field.shape[0] for field in field_list]
+    # if not np.all(np.equal(n_points, n_points[0])):
+    #     print('wrong field dimensions')
+    #     return False
 
     # Check if field_names and field_list have same nb of column
     n_fields = np.sum([field.shape[1] for field in field_list])
