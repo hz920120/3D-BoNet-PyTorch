@@ -76,7 +76,7 @@ def save_sub(sub_save_path, blocks, limit):
         os.mkdir(sub_save_path) if not exists(sub_save_path) else None
         sub_ply_file = join(sub_save_path, name + '.ply')
         wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels , limit_x, limit_y, limit_z],
-                     ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_x', 'limit_x'])
+                     ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_y', 'limit_z'])
 
         search_tree = KDTree(sub_xyz)
         kd_tree_file = join(sub_save_path, name + '_KDTree.pkl')
