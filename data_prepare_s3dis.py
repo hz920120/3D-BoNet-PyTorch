@@ -18,7 +18,7 @@ anno_paths = [join(dataset_path, p) for p in anno_paths]
 gt_class = [x.rstrip() for x in open(join('/media/cesc/CESC/data/meta/class_names.txt'))]
 gt_class2label = {cls: i for i, cls in enumerate(gt_class)}
 
-sub_grid_size = 0.04
+sub_grid_size = 0.02
 original_pc_folder = join(dirname(dataset_path), 'original_ply')
 sub_pc_folder = join(dirname(dataset_path), 'input_{:.3f}'.format(sub_grid_size))
 os.mkdir(original_pc_folder) if not exists(original_pc_folder) else None
@@ -54,13 +54,27 @@ def convert_pc2ply(anno_path, save_path, scene_name):
     os.mkdir(join(dataset_path, 'sample_ori_dir')) if not exists(join(dataset_path, 'sample_ori_dir')) else None
     h5_path = join(dataset_path, 'sample_ori_dir', scene_name + '.h5')
 
-    save_dic(h5_path, blocks)
-    sub_save_path = join(dataset_path, 'sample_ori_dir', 'input_{:.3f}'.format(sub_grid_size))
+    # save_dic(h5_path, blocks)
+    # sub_save_path = join(dataset_path, 'sample_ori_dir', 'input_{:.3f}'.format(sub_grid_size))
     limit = np.amax(pc_label[:, 0:3], axis=0)
-    save_sub(sub_save_path, blocks, limit)
+
+    h5_file = save_sub(blocks, limit)
+    save_dic(h5_path, h5_file)
+
+def create_sub_dic(sub_xyz, sub_colors, sub_labels, sub_ins_labels, limit_x, limit_y, limit_z):
+    dic = {}
+    dic['sub_xyz'] = sub_xyz
+    dic['sub_colors'] = sub_colors
+    dic['sub_labels'] = sub_labels
+    dic['sub_ins_labels'] = sub_ins_labels
+    dic['limit_x'] = limit_x
+    dic['limit_y'] = limit_y
+    dic['limit_z'] = limit_z
+    return dic
 
 
-def save_sub(sub_save_path, blocks, limit):
+def save_sub(blocks, limit):
+    h5_file = {}
     for name, block in blocks.items():
         xyz = block[:, :3].astype(np.float32)
         colors = block[:, 3:6].astype(np.float32)
@@ -73,21 +87,33 @@ def save_sub(sub_save_path, blocks, limit):
         limit_y = np.array(limit[1])
         limit_z = np.array(limit[2])
 
-        os.mkdir(sub_save_path) if not exists(sub_save_path) else None
-        sub_ply_file = join(sub_save_path, name + '.ply')
-        wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels , limit_x, limit_y, limit_z],
-                     ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_y', 'limit_z'])
+        save_sub_files = {}
+
+
+        sub_ply_dic = create_sub_dic(sub_xyz, sub_colors, sub_labels, sub_ins_labels , limit_x, limit_y, limit_z)
+        save_sub_files['sub_ply_file'] = sub_ply_dic
+        # wp.write_ply(sub_ply_file, [sub_xyz, sub_colors, sub_labels, sub_ins_labels , limit_x, limit_y, limit_z],
+        #              ['x', 'y', 'z', 'red', 'green', 'blue', 'class', 'ins_labels', 'limit_x', 'limit_y', 'limit_z'])
+
 
         search_tree = KDTree(sub_xyz)
-        kd_tree_file = join(sub_save_path, name + '_KDTree.pkl')
-        with open(kd_tree_file, 'wb') as f:
-            pickle.dump(search_tree, f)
+        save_sub_files['kd_tree_file'] = search_tree
+
+        # kd_tree_file = join(sub_save_path, name + '_KDTree.pkl')
+        # with open(kd_tree_file, 'wb') as f:
+        #     pickle.dump(search_tree, f)
 
         proj_idx = np.squeeze(search_tree.query(xyz, return_distance=False))
         proj_idx = proj_idx.astype(np.int32)
-        proj_save = join(sub_save_path, name + '_proj.pkl')
-        with open(proj_save, 'wb') as f:
-            pickle.dump([proj_idx, labels], f)
+        # proj_save = join(sub_save_path, name + '_proj.pkl')
+        # with open(proj_save, 'wb') as f:
+        #     pickle.dump([proj_idx, labels], f)
+        save_sub_files['project'] = [proj_idx, labels]
+        # h5_path = join(dataset_path, 'sample_ori_dir', scene_name+'_sub.h5')
+        # h5_path = join(dataset_path, 'sample_ori_dir', name+'.h5')
+        h5_file[name] = save_sub_files
+        # save_dic(h5_path, save_sub_files)
+    return h5_file
 
 def room_to_blocks(cloud, size=1.0, stride=0.5, threshold=100, scene_name=None):
     if scene_name is None:
