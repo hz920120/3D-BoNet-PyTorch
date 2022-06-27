@@ -10,22 +10,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import copy
+from prefetch_generator import BackgroundGenerator
+
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from dataset_randla_hz import Data_Configs_RandLA
 from helper_net import Ops
+from utils.helper_ply import read_ply
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Eval_Tools:
     @staticmethod
     def get_scene_list(res_blocks):
-        scene_list_dic = {}
+        scene_list_dic = []
         for b in res_blocks:
-            scene_name = b.split('/')[-1][0:-len('_0000')]
-            if scene_name not in scene_list_dic: scene_list_dic[scene_name] = []
-            scene_list_dic[scene_name].append(b)
+            scene_list_dic.append(b)
         if len(scene_list_dic) == 0:
-            print('scene len is 0, error!');
+            print('scene len is 0, error!')
             exit()
         return scene_list_dic
 
@@ -85,9 +88,32 @@ class Eval_Tools:
                 finalgrouplabel[i] = groupcate[grouplabel[i]]
         return finalgrouplabel
 
+    # @staticmethod
+    # def get_mean_insSize_by_sem(dataset_path, valid_dataloader):
+    #     from s3dis_dataset import Data_Configs_RandLA as Data_Configs
+    #     configs = Data_Configs()
+    #
+    #     mean_insSize_by_sem = {}
+    #     for sem in configs.sem_ids:mean_insSize_by_sem[sem] = []
+    #
+    #     pbar = tqdm(enumerate(valid_dataloader), total=len(valid_dataloader))
+    #     for i, batchdata_test in pbar:
+    #         for key in batchdata_test:
+    #             sem_labels = batchdata_test['sem_labels']
+    #             ins_labels = batchdata_test['ins_labels']
+    #             ins_idx = np.unique(ins_labels)
+    #             for ins_id in ins_idx:
+    #                 tmp = (ins_labels == ins_id)
+    #                 sem = scipy.stats.mode(sem_labels[tmp])[0][0]
+    #                 mean_insSize_by_sem[sem].append(np.sum(np.asarray(tmp, dtype=np.float32)))
+    #
+    #     for sem in mean_insSize_by_sem: mean_insSize_by_sem[sem] = np.mean(mean_insSize_by_sem[sem])
+    #
+    #     return mean_insSize_by_sem
+
     @staticmethod
     def get_mean_insSize_by_sem(dataset_path, train_areas):
-        from helper_data_s3dis import Data_Configs as Data_Configs
+        from s3dis_dataset import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
 
         mean_insSize_by_sem = {}
@@ -95,12 +121,12 @@ class Eval_Tools:
 
         for a in train_areas:
             print('get mean insSize, check train area:', a)
-            files = sorted(glob.glob(dataset_path + a + '*.h5'))
+
+            files = sorted(glob.glob(dataset_path + '/original_ply/' + '*.ply'))
             for file_path in files:
-                fin = h5py.File(file_path, 'r')
-                semIns_labels = fin['labels'][:].reshape([-1, 2])
-                ins_labels = semIns_labels[:, 1]
-                sem_labels = semIns_labels[:, 0]
+                data = read_ply(file_path)
+                ins_labels = data['ins_labels']
+                sem_labels = data['class']
 
                 ins_idx = np.unique(ins_labels)
                 for ins_id in ins_idx:
@@ -125,14 +151,12 @@ class Evaluation:
 
     # use GT semantic now (for validation)
     @staticmethod
-    def ttest(data, result_path, test_batch_size=1, MODEL_PATH=None):
+    def ttest(data_loader, result_path, test_batch_size=1, MODEL_PATH=None):
         # parameter
         # load trained model
         from BoNetMLP import pmask_net, bbox_net
         from RandLANet import RandLA
-        # date = '20200620_085341_Area_5'
-        # epoch_num = '075'
-        # MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022800')
+
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         checkpoint = torch.load(MODEL_PATH)
         # backbone_pointnet2 = RandLA(is_train=False).cuda()
@@ -151,18 +175,24 @@ class Evaluation:
 
         print("Load model suceessfully.")
 
-        test_files = data.test_files
-        print('total_test_batch_num_sq', len(test_files))
-        scene_list_dic = Eval_Tools.get_scene_list(test_files)
+        print('total_test_batch_num_sq', len(data_loader.dataset.input_names['validation']))
+        scene_list_dic = Eval_Tools.get_scene_list(data_loader.dataset.input_names['validation'])
 
         for scene_name in scene_list_dic:
             print('test scene:', scene_name)
             scene_result = {}
-            scene_files = scene_list_dic[scene_name]
-            for k in range(0, len(scene_files), test_batch_size):
-                t_files = scene_files[k: k + test_batch_size]
-                batchdata_test = \
-                    data.load_test_next_batch_sq_randla(bat_files=t_files)
+            pbar = tqdm(enumerate(valid_dataloader), total=len(valid_dataloader))
+            for i, batchdata_test in pbar:
+                for key in batchdata_test:
+                    if type(batchdata_test[key]) is list:
+                        for j in range(len(batchdata_test[key])):
+                            batchdata_test[key][j] = batchdata_test[key][j].to(device)
+                    else:
+                        batchdata_test[key] = batchdata_test[key].to(device)
+                # bat_sem_gt = batchdata['bbvert_padded_labels']
+                # bat_psem_onehot = batchdata['psem_onehot_labels']
+                # bat_pmask = batchdata['pmask_padded_labels']
+                # bat_pc = batchdata['features'].to(device).permute(0, 2, 1).contiguous()
                 bat_sem_gt = batchdata_test['sem_labels']
                 bat_ins_gt = batchdata_test['ins_labels']
                 bat_pc = batchdata_test['features'].to(device).permute(0, 2, 1).contiguous()
@@ -172,32 +202,27 @@ class Evaluation:
                 y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw = bbox_net(global_features)
 
                 y_pmask_pred_raw = pmask_net(point_features, global_features, y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw)
+                pc = np.asarray(bat_pc[0].cpu().detach(), dtype=np.float16)
+                sem_gt = np.asarray(bat_sem_gt[0].cpu().detach(), dtype=np.int16)
+                ins_gt = np.asarray(bat_ins_gt[0].cpu().detach(), dtype=np.int32)
+                sem_pred_raw = np.asarray(y_psem_pred_sq_raw[0].cpu().detach(), dtype=np.float16)
+                bbvert_pred_raw = np.asarray(y_bbvert_pred_sq_raw[0].cpu().detach(), dtype=np.float16)
+                bbscore_pred_raw = np.asarray(y_bbscore_pred_sq_raw[0].cpu().detach(), dtype=np.float16)
+                pmask_pred_raw = np.asarray(y_pmask_pred_raw[0].cpu().detach(), dtype=np.float16)
+                scene_result['block_' + str(i).zfill(4)] = {'pc': pc, 'sem_gt': sem_gt, 'ins_gt': ins_gt,
+                                                       'sem_pred_raw': sem_pred_raw,
+                                                       'bbvert_pred_raw': bbvert_pred_raw,
+                                                       'bbscore_pred_raw': bbscore_pred_raw,
+                                                       'pmask_pred_raw': pmask_pred_raw}
 
-                for b in range(len(t_files)):
-                    pc = np.asarray(bat_pc.cpu().detach()[b], dtype=np.float16)
-                    sem_gt = np.asarray(bat_sem_gt[b], dtype=np.int16)
-                    ins_gt = np.asarray(bat_ins_gt[b], dtype=np.int32)
-                    sem_pred_raw = np.asarray(y_psem_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
-                    bbvert_pred_raw = np.asarray(y_bbvert_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
-                    bbscore_pred_raw = np.asarray(y_bbscore_pred_sq_raw.cpu().detach()[b], dtype=np.float16)
-                    pmask_pred_raw = np.asarray(y_pmask_pred_raw.cpu().detach()[b], dtype=np.float16)
-
-                    block_name = t_files[b][-len('0000'):]
-                    scene_result['block_' + block_name] = {'pc': pc, 'sem_gt': sem_gt, 'ins_gt': ins_gt,
-                                                           'sem_pred_raw': sem_pred_raw,
-                                                           'bbvert_pred_raw': bbvert_pred_raw,
-                                                           'bbscore_pred_raw': bbscore_pred_raw,
-                                                           'pmask_pred_raw': pmask_pred_raw}
-
-            if len(scene_result) != len(scene_files): print('file testing error'); exit()
             if not os.path.exists(result_path + 'res_by_scene/'): os.makedirs(result_path + 'res_by_scene/')
             scipy.io.savemat(result_path + 'res_by_scene/' + scene_name + '.mat', scene_result, do_compression=True)
 
     @staticmethod
-    def evaluation(dataset_path: object, train_areas: object, result_path: object, writer: object = None, ep: object = None) -> object:
-        from dataset_randla_hz import Data_Configs_RandLA as Data_Configs
+    def evaluation(valid_dataloader, result_path, writer=None, ep=None):
+        from s3dis_dataset import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
-        mean_insSize_by_sem = Eval_Tools.get_mean_insSize_by_sem(dataset_path, train_areas)
+        mean_insSize_by_sem = Eval_Tools.get_mean_insSize_by_sem(dataset_path, valid_dataloader)
 
         TP_FP_Total = {}
         for sem_id in configs.sem_ids:
@@ -213,11 +238,11 @@ class Evaluation:
                                             verify_compressed_data_integrity=False)
 
             # point cloud all
-            pc_all = [];
+            pc_all = []
             # ground truth
-            ins_gt_all = [];
+            ins_gt_all = []
             # segment predict all
-            sem_pred_all = [];
+            sem_pred_all = []
             # segment ground truth all
             sem_gt_all = []
             gap = 5e-3
@@ -255,12 +280,12 @@ class Evaluation:
             ins_pred_all = volume[tuple(pc_xyz_int.T)]
 
             #### if you need to visulize, please uncomment the follow lines
-            from helper_data_plot import Plot as Plot
-            Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
+            # from helper_data_plot import Plot as Plot
+            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
             ####
 
             ###################
@@ -343,37 +368,46 @@ def findAllFile(base):
         for f in fs:
             yield f
 
+class DataLoaderX(DataLoader):
+    def __iter__(self):
+        return BackgroundGenerator(super().__iter__())
+
 #######################
 if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_test/'
-    train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
+    from s3dis_dataset import S3DIS as Data
+    batch_size = 4
+    # dataset_path = './Data_S3DIS/'
+    dataset_path = '/media/cesc/CESC/ply_test'
+    validation_data = Data(dataset_path, 'validation')
+    valid_dataloader = DataLoaderX(
+        validation_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        # worker_init_fn=self.worker_init,
+        collate_fn=validation_data.collate_fn,
+        pin_memory=True)
+
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
-
-    batch_eval = False
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.system('rm -rf %s' % (result_path))
     save_model_dir = os.path.join(BASE_DIR, 'checkpoints/colab_checkpoints/')
-    # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    # PATH = os.path.join(save_model_dir, 'latest_model_55.pt')
-    # data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    # Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-    # valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
-    # print('mPre-{}_mRec-{}'.format(valid_mPre+'', valid_mRec+''))
     for i in findAllFile(save_model_dir):
         print('start eval  ' + datetime.now().strftime("%H:%M:%S"))
         PATH = os.path.join(save_model_dir, i)
         print(i)
-        data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-        Evaluation.ttest(data, result_path, test_batch_size=1, MODEL_PATH=PATH)
-        valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+
+        Evaluation.ttest(valid_dataloader, result_path, MODEL_PATH=PATH)
+        valid_mPre, valid_mRec = Evaluation.evaluation(valid_dataloader, result_path)  # train_areas is just for a parameter
         # modify path
         out_put_path = './logs'
         torch.save({}, '{}/epoch-{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
-                                                                           valid_mPre, valid_mRec))
+                                                                    valid_mPre, valid_mRec))
         print('{}_area-{}_mPre-{}_mRec-{}'.format(i, test_areas[0],
-                                                                           valid_mPre, valid_mRec))
+                                                  valid_mPre, valid_mRec))
 
 

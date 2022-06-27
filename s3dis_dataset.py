@@ -29,9 +29,9 @@ class Data_Configs_RandLA:
 
     points_cc = 9
     sem_num = len(sem_names)
-    ins_max_num = 47
+    ins_max_num = 40
     noise_init = 3.5
-    n_pts = 20480
+    n_pts = 40960
     num_layers = 5
     k_n = 16
     sub_grid_size = 0.04
@@ -77,6 +77,7 @@ class S3DIS(torch_data.Dataset):
         self.input_colors = {'training': [], 'validation': []}
         self.input_labels = {'training': [], 'validation': []}
         self.sub_ins_labels = {'training': [], 'validation': []}
+        self.sub_norm_xyz = {'training': [], 'validation': []}
         self.input_names = {'training': [], 'validation': []}
 
         # ConfigS3DIS.ignored_label_inds = [
@@ -84,6 +85,7 @@ class S3DIS(torch_data.Dataset):
         # ]
         self.class_weights = DataProcessing.get_class_weights('S3DIS')
         self.load_sub_sampled_clouds(Data_Configs_RandLA.sub_grid_size, self.mode)
+        # self.load_ori_clouds(Data_Configs_RandLA.sub_grid_size, self.mode)
         self.sem_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     def load_sub_sampled_clouds(self, sub_grid_size, mode):
@@ -108,6 +110,13 @@ class S3DIS(torch_data.Dataset):
                 (data['red'], data['green'], data['blue'])).T
             sub_labels = data['class']
             sub_ins_labels = data['ins_labels']
+            sub_xyz = np.vstack(
+                (data['x'], data['y'], data['z'])).T
+
+            sub_limit = np.vstack(
+                (data['limit_x'], data['limit_y'], data['limit_z'])).T
+
+            norm_xyz = sub_xyz / sub_limit
 
             # Read pkl with search tree
             with open(kd_tree_file, 'rb') as f:
@@ -118,6 +127,7 @@ class S3DIS(torch_data.Dataset):
             self.input_labels[cloud_split] += [sub_labels]
             self.sub_ins_labels[cloud_split] += [sub_ins_labels]
             self.input_names[cloud_split] += [cloud_name]
+            self.sub_norm_xyz[cloud_split] += [norm_xyz]
 
             size = sub_colors.shape[0] * 4 * 7
             print('{:s} {:.1f} MB loaded in {:.1f}s'.format(
@@ -193,6 +203,8 @@ class S3DIS(torch_data.Dataset):
             self.mode][cloud_idx][queried_idx]
         queried_ins_labels = self.sub_ins_labels[
             self.mode][cloud_idx][queried_idx]
+        norm_xyz = self.sub_norm_xyz[
+            self.mode][cloud_idx][queried_idx]
 
         # Update the possibility of the selected points
         dists = np.sum(np.square(
@@ -226,6 +238,7 @@ class S3DIS(torch_data.Dataset):
             pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y) / np.maximum((max_y - min_y), 1e-3)
             pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z) / np.maximum((max_z - min_z), 1e-3)
 
+        pc_xyzrgb = np.concatenate([pc_xyzrgb, norm_xyz], axis=-1)
         pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1)
 
         ########

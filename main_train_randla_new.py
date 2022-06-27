@@ -81,17 +81,16 @@ if __name__ == '__main__':
     #
     dataset_path = '/media/cesc/CESC/ply_test'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size = 4
+    batch_size = 1
     training_data = Data(dataset_path, 'training')
     train_dataloader = DataLoaderX(
         training_data,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=1,
         # worker_init_fn=self.worker_init,
         collate_fn=training_data.collate_fn,
         pin_memory=True)
-    validation_data = Data(dataset_path, 'validation')
 
     # train(net, data)
 
