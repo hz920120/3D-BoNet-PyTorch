@@ -90,7 +90,7 @@ class DataProcessing:
         return xyz_aug, color_aug, idx_aug, label_aug
 
     @staticmethod
-    def data_aug_new(xyz, color, labels, ins_labels, idx, num_out):
+    def data_aug_new(xyz, color, labels, ins_labels, idx, norm_xyz, num_out):
         num_in = len(xyz)
         dup = np.random.choice(num_in, num_out - num_in)
         xyz_dup = xyz[dup, ...]
@@ -101,7 +101,9 @@ class DataProcessing:
         idx_aug = idx[idx_dup]
         label_aug = labels[idx_dup]
         ins_label_aug = ins_labels[idx_dup]
-        return xyz_aug, color_aug, idx_aug, label_aug, ins_label_aug
+        norm_xyz_dup = norm_xyz[dup, ...]
+        norm_xyz_aug = np.concatenate([norm_xyz, norm_xyz_dup], 0)
+        return xyz_aug, color_aug, idx_aug, label_aug, ins_label_aug, norm_xyz_aug
 
     @staticmethod
     def shuffle_idx(x):

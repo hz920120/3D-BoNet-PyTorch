@@ -1,17 +1,14 @@
 #! ~/.miniconda3/envs/pytorch/bin/python
 
+import copy
+import glob
 import os
+import pickle
 import sys
 import time
-import glob
-import pickle
-import numpy as np
-import copy
-import pandas as pd
 
+import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as torch_data
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,29 +37,8 @@ class Data_Configs_RandLA:
 
 class S3DIS(torch_data.Dataset):
     def __init__(self, data_path, mode, test_area_idx=5):
-        self.name = 'S3DIS'
         self.mode = mode
         self.path = data_path
-        self.label_to_names = {
-            0: 'ceiling',
-            1: 'floor',
-            2: 'wall',
-            3: 'beam',
-            4: 'column',
-            5: 'window',
-            6: 'door',
-            7: 'table',
-            8: 'chair',
-            9: 'sofa',
-            10: 'bookcase',
-            11: 'board',
-            12: 'clutter'
-        }
-        self.num_classes = len(self.label_to_names)
-        self.label_values = np.sort(
-            [k for k, v in self.label_to_names.items()])
-        self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
-        self.ignored_labels = np.array([])
 
         self.val_split = 'Area_' + str(test_area_idx)
         self.all_files = glob.glob(
@@ -80,13 +56,7 @@ class S3DIS(torch_data.Dataset):
         self.sub_norm_xyz = {'training': [], 'validation': []}
         self.input_names = {'training': [], 'validation': []}
 
-        # ConfigS3DIS.ignored_label_inds = [
-        #     self.label_to_idx[ign_label] for ign_label in self.ignored_labels
-        # ]
-        self.class_weights = DataProcessing.get_class_weights('S3DIS')
         self.load_sub_sampled_clouds(Data_Configs_RandLA.sub_grid_size, self.mode)
-        # self.load_ori_clouds(Data_Configs_RandLA.sub_grid_size, self.mode)
-        self.sem_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     def load_sub_sampled_clouds(self, sub_grid_size, mode):
         tree_path = os.path.join(self.path,

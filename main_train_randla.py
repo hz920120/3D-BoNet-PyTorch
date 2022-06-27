@@ -73,7 +73,7 @@ if __name__ == '__main__':
     #
     dataset_path = './Data_S3DIS_bak/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size = 4
+    batch_size = 1
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
@@ -156,7 +156,7 @@ if __name__ == '__main__':
         total_loss = 0
         last_ep_time = datetime.now().strftime("%H:%M:%S")
         for i in range(total_train_batch_num):
-            batchdata = data.load_train_next_batch_randla()
+            batchdata = data.load_train_batch()
             bat_bbvert = batchdata['bbvert_padded_labels']
             bat_psem_onehot = batchdata['psem_onehot_labels']
             bat_pmask = batchdata['pmask_padded_labels']

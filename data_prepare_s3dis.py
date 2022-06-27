@@ -142,8 +142,8 @@ if __name__ == '__main__':
         out_file_name = elements[-3] + '_' + elements[-2] + out_format
         scene_name = elements[-3] + '_' + elements[-2]
         h5_path = join(dataset_path, 'sample_ori_dir', scene_name + '.h5')
-        file_exists = os.path.exists(h5_path)
-        if file_exists:
-            print('{} exists'.format(h5_path))
-            continue
+        # file_exists = os.path.exists(h5_path)
+        # if file_exists:
+        #     print('{} exists'.format(h5_path))
+        #     continue
         convert_pc2ply(annotation_path, join(original_pc_folder, out_file_name), scene_name)

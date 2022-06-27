@@ -93,7 +93,7 @@ negative_slope = 0.2
 #
 #         return y_sem_pred, sem4
 
-from s3dis_dataset import Data_Configs_RandLA
+from dataset_randla_hz import Data_Configs_RandLA
 # 2. bbox
 class bbox_net(nn.Module):
     def __init__(self):
