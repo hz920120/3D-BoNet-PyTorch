@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import scipy.stats
 import os
@@ -87,7 +89,7 @@ class Eval_Tools:
 
     @staticmethod
     def get_mean_insSize_by_sem(dataset_path, train_areas):
-        from helper_data_s3dis import Data_Configs as Data_Configs
+        from dataset_randla_hz import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
 
         mean_insSize_by_sem = {}
@@ -97,7 +99,12 @@ class Eval_Tools:
             print('get mean insSize, check train area:', a)
             files = sorted(glob.glob(dataset_path + a + '*.h5'))
             for file_path in files:
-                fin = h5py.File(file_path, 'r')
+                a_file = open(file_path, "rb")
+                blocks = pickle.load(a_file)
+                a_file.close()
+                sub_ply_file = {}
+                for name, block in blocks.items():
+                    sub_ply_file = block
                 semIns_labels = fin['labels'][:].reshape([-1, 2])
                 ins_labels = semIns_labels[:, 1]
                 sem_labels = semIns_labels[:, 0]
@@ -151,7 +158,7 @@ class Evaluation:
 
         print("Load model suceessfully.")
 
-        test_files = data.test_files
+        test_files = data.test_files_count
         print('total_test_batch_num_sq', len(test_files))
         scene_list_dic = Eval_Tools.get_scene_list(test_files)
 
@@ -256,11 +263,11 @@ class Evaluation:
 
             #### if you need to visulize, please uncomment the follow lines
             from helper_data_plot import Plot as Plot
-            Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
-            Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
+            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)
+            # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_pred_all)
             ####
 
             ###################
@@ -348,14 +355,14 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
-    dataset_path = './Data_S3DIS_test/'
+    dataset_path = './Data_S3DIS_bak/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     batch_eval = False
     os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/colab_checkpoints/')
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022062800/')
     # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
     # PATH = os.path.join(save_model_dir, 'latest_model_55.pt')
     # data = Evaluation.load_data(dataset_path, train_areas, test_areas)

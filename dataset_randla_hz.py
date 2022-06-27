@@ -1,4 +1,5 @@
 import glob
+import gzip
 import os
 import pickle
 import time
@@ -34,15 +35,15 @@ class Data_S3DIS:
     def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4, is_train=True):
         # self.batch = Data_Configs_RandLA.train_pts_num // 4096
         self.root_folder_4_traintest = dataset_path
-        self.train_files = self.load_full_file_list(areas=train_areas)
-        self.test_files = self.load_full_file_list(areas=test_areas)
-        self.all_files = self.train_files + self.test_files
+        self.train_files_count, self.train_files = self.load_full_file_list(areas=train_areas)
+        self.test_files_count, self.test_files = self.load_full_file_list(areas=test_areas)
+        self.all_files = self.train_files_count + self.test_files_count
         print('train files:', len(self.train_files))
         print('test files:', len(self.test_files))
 
         self.ins_max_num = Data_Configs_RandLA.ins_max_num
         self.train_batch_size = train_batch_size
-        self.total_train_batch_num = len(self.train_files) // self.train_batch_size
+        self.total_train_batch_num = len(self.train_files_count) // self.train_batch_size
 
         self.num_layers = Data_Configs_RandLA.num_layers
         self.k_n = Data_Configs_RandLA.k_n
@@ -81,7 +82,6 @@ class Data_S3DIS:
 
 
     def load_sub_sampled_clouds(self, sub_grid_size, mode):
-        tree_path = os.path.join(self.path,'input_{:.3f}'.format(sub_grid_size))
         for i, file_path in enumerate(self.all_files):
             t0 = time.time()
             cloud_name = file_path.split('/')[-1]
@@ -90,30 +90,43 @@ class Data_S3DIS:
             else:
                 cloud_split = 'training'
 
-            # Name of the input files
-            kd_tree_file = os.path.join(tree_path,
-                                        '{:s}_KDTree.pkl'.format(cloud_name))
-            sub_ply_file = os.path.join(tree_path,
-                                        '{:s}.ply'.format(cloud_name))
+            if cloud_split == 'training':
+                sub_ply_file = self.train_files[file_path]['sub_ply_file']
+                kd_tree_file = self.train_files[file_path]['kd_tree_file']
+                project = self.train_files[file_path]['project']
+            else:
+                sub_ply_file = self.test_files[file_path]['sub_ply_file']
+                kd_tree_file = self.test_files[file_path]['kd_tree_file']
+                project = self.test_files[file_path]['project']
 
-            data = read_ply(sub_ply_file)
-            sub_colors = np.vstack(
-                (data['red'], data['green'], data['blue'])).T
-            sub_labels = data['class']
-            sub_ins_labels = data['ins_labels']
-            sub_xyz = np.vstack(
-                (data['x'], data['y'], data['z'])).T
+            # Get validation and test reprojected indices
+            if self.val_split in cloud_name:
+                proj_idx, labels = project[0], project[1]
+                self.val_proj += [proj_idx]
+                self.val_labels += [labels]
+                print('{:s} done in {:.1f}s'.format(cloud_name,
+                                                    time.time() - t0))
+            # Name of the input files
+            # kd_tree_file = os.path.join(tree_path,
+            #                             '{:s}_KDTree.pkl'.format(cloud_name))
+            # sub_ply_file = os.path.join(tree_path,
+            #                             '{:s}.ply'.format(cloud_name))
+
+            sub_colors = sub_ply_file['sub_colors']
+            sub_labels = sub_ply_file['sub_labels']
+            sub_ins_labels = sub_ply_file['sub_ins_labels']
+            sub_xyz = sub_ply_file['sub_xyz']
 
             sub_limit = np.vstack(
-                (data['limit_x'], data['limit_y'], data['limit_z'])).T
+                (sub_ply_file['limit_x'], sub_ply_file['limit_y'], sub_ply_file['limit_z'])).T
 
             norm_xyz = sub_xyz / sub_limit
 
-            # Read pkl with search tree
-            with open(kd_tree_file, 'rb') as f:
-                search_tree = pickle.load(f)
+            # # Read pkl with search tree
+            # with open(kd_tree_file, 'rb') as f:
+            #     search_tree = pickle.load(f)
 
-            self.input_trees[cloud_split] += [search_tree]
+            self.input_trees[cloud_split] += [kd_tree_file]
             self.input_colors[cloud_split] += [sub_colors]
             self.input_labels[cloud_split] += [sub_labels]
             self.sub_ins_labels[cloud_split] += [sub_ins_labels]
@@ -128,24 +141,21 @@ class Data_S3DIS:
 
             size = sub_colors.shape[0] * 4 * 7
             print('{:s} {:.1f} MB loaded in {:.1f}s'.format(
-                kd_tree_file.split('/')[-1], size * 1e-6,
+                cloud_name + ' kd_tree_file', size * 1e-6,
                 time.time() - t0))
-        print('\nPreparing reprojected indices for testing')
 
         # Get validation and test reprojected indices
-        for i, file_path in enumerate(self.all_files):
-            t0 = time.time()
-            cloud_name = file_path.split('/')[-1][:-5]
-
-            # Validation projection and labels
-            if self.val_split in cloud_name:
-                proj_file = os.path.join(tree_path,file_path+'_proj.pkl')
-                with open(proj_file, 'rb') as f:
-                    proj_idx, labels = pickle.load(f)
-                self.val_proj += [proj_idx]
-                self.val_labels += [labels]
-                print('{:s} done in {:.1f}s'.format(cloud_name,
-                                                    time.time() - t0))
+        # for i, file_path in enumerate(self.all_files):
+        #     t0 = time.time()
+        #     cloud_name = file_path.split('/')[-1][:-5]
+        #
+        #     # Validation projection and labels
+        #     if self.val_split in cloud_name:
+        #         proj_idx, labels = project[0], project[1]
+        #         self.val_proj += [proj_idx]
+        #         self.val_labels += [labels]
+        #         print('{:s} done in {:.1f}s'.format(cloud_name,
+        #                                             time.time() - t0))
 
         for i, tree in enumerate(self.input_colors[mode]):
             self.possibility[mode].append(
@@ -155,16 +165,20 @@ class Data_S3DIS:
 
 
     def load_full_file_list(self, areas):
-        all_files = []
+        all_files_count = []
+        all_files = {}
         for a in areas:
             print('check area:', a)
             files = sorted(glob.glob(self.root_folder_4_traintest + a + '*.h5'))
             for f in files:
+                # with gzip.open(f, 'rb') as file:
+                #     data = pickle.loads(file)
                 a_file = open(f, "rb")
                 blocks = pickle.load(a_file)
                 a_file.close()
                 for name, block in blocks.items():
-                    all_files.append(name)
+                    all_files_count.append(name)
+                    all_files[name] = block
                 # coords = fin['coords'][:]
                 # semIns_labels = fin['labels'][:].reshape([-1, 2])
                 # ins_labels = semIns_labels[:, 1]
@@ -185,7 +199,7 @@ class Data_S3DIS:
                 # for b in range(block_num):
                 #     all_files.append(f + '_' + str(b).zfill(4))
 
-        return all_files
+        return all_files_count, all_files
 
     @staticmethod
     def load_raw_data_file_s3dis_block(file_path):
@@ -208,6 +222,37 @@ class Data_S3DIS:
         # Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
 
         return pc, sem_labels, ins_labels
+
+    @staticmethod
+    def vis_data(blocks):
+
+        for name, block in blocks.items():
+            sub_ply_file = block['sub_ply_file']
+            sub_colors = sub_ply_file['sub_colors']
+            sub_labels = sub_ply_file['sub_labels']
+            sub_ins_labels = sub_ply_file['sub_ins_labels']
+            sub_xyz = sub_ply_file['sub_xyz']
+
+            sub_limit = np.vstack(
+                (sub_ply_file['limit_x'], sub_ply_file['limit_y'], sub_ply_file['limit_z'])).T
+
+            norm_xyz = sub_xyz / sub_limit
+
+            # coords = sub_ply_file['sub_xyz']
+            # points = fin['points'][block_id]
+            # semIns_labels = fin['labels'][block_id]
+
+            pc = np.concatenate([sub_xyz, sub_colors, norm_xyz], axis=-1)
+            sem_labels = sub_labels
+            ins_labels = sub_ins_labels
+
+            # if u need to visulize data, uncomment the following lines
+            from helper_data_plot import Plot as Plot
+            Plot.draw_pc(pc)
+            Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+            Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+
+        return
 
 
     @staticmethod
@@ -381,7 +426,7 @@ class Data_S3DIS:
         return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
 
     def load_train_next_batch(self):
-        bat_files = self.train_files[self.train_next_bat_index *
+        bat_files = self.train_files_count[self.train_next_bat_index *
                                      self.train_batch_size:( self.train_next_bat_index + 1) * self.train_batch_size]
         bat_pc = []
         bat_sem_labels = []
@@ -411,7 +456,7 @@ class Data_S3DIS:
 
     def load_train_batch(self):
 
-        bat_files = self.train_files[self.train_next_bat_index *
+        bat_files = self.train_files_count[self.train_next_bat_index *
                                      self.train_batch_size:(self.train_next_bat_index + 1) * self.train_batch_size]
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
         for i in bat_files:
@@ -486,6 +531,7 @@ class Data_S3DIS:
         queried_idx = DataProcessing.shuffle_idx(queried_idx)
         # Get corresponding points and colors based on the index
         queried_pc_xyz = points[queried_idx]
+        ori_xyz = copy.deepcopy(queried_pc_xyz[:, 0:3])  # reserved for final visualization
         queried_pc_xyz = queried_pc_xyz - pick_point
         queried_pc_colors = self.input_colors[
             self.mode][cloud_idx][queried_idx]
@@ -524,7 +570,7 @@ class Data_S3DIS:
         min_z = np.min(pc_xyzrgb[:, 2])
         max_z = np.max(pc_xyzrgb[:, 2])
 
-        ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3])  # reserved for final visualization
+
         use_zero_one_center = True
         if use_zero_one_center:
             pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x) / np.maximum((max_x - min_x), 1e-3)
@@ -620,7 +666,7 @@ class Data_S3DIS:
         return input_list
 
     def load_test_next_batch_random(self):
-        idx = random.sample(range(len(self.test_files)), self.train_batch_size)
+        idx = random.sample(range(len(self.test_files_count)), self.train_batch_size)
         bat_pc = []
         bat_sem_labels = []
         bat_ins_labels = []
@@ -628,7 +674,7 @@ class Data_S3DIS:
         bat_bbvert_padded_labels = []
         bat_pmask_padded_labels = []
         for i in idx:
-            file = self.test_files[i]
+            file = self.test_files_count[i]
             pc, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = Data_S3DIS.load_fixed_points(
                 file)
             bat_pc.append(pc)
@@ -650,8 +696,7 @@ class Data_S3DIS:
     def load_test_next_batch_sq_randla(self, bat_files, is_train=False):
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
         for i in bat_files:
-            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i, is_train)
+            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = self.spatially_regular_gen(self.input_names['validation'].index(i))
             pc_xyzrgb.append(pc)
             sem_labels.append(sem_label)
             ins_labels.append(ins_label)
@@ -719,12 +764,20 @@ class Data_S3DIS:
         return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels, bat_files
 
     def shuffle_train_files(self, ep):
-        index = list(range(len(self.train_files)))
+        index = list(range(len(self.train_files_count)))
         random.seed(ep)
         shuffle(index)
         train_files_new = []
         for i in index:
-            train_files_new.append(self.train_files[i])
-        self.train_files = train_files_new
+            train_files_new.append(self.train_files_count[i])
+        self.train_files_count = train_files_new
         self.train_next_bat_index = 0
         print('train files shuffled!')
+
+if __name__ == '__main__':
+
+    f = '/home/cesc/applications/workspace/3D-BoNet-PyTorch/Data_S3DIS_bak/Area_1_conferenceRoom_1.h5'
+    a_file = open(f, "rb")
+    blocks = pickle.load(a_file)
+    a_file.close()
+    Data_S3DIS.vis_data(blocks)
