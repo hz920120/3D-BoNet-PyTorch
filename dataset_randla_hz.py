@@ -1,4 +1,8 @@
 import glob
+import os
+import pickle
+import time
+
 import numpy as np
 import random
 import copy
@@ -6,7 +10,7 @@ from random import shuffle
 import h5py
 import torch
 from data_process import DataProcessing
-from itertools import islice
+from utils.helper_ply import read_ply
 
 
 class Data_Configs_RandLA:
@@ -14,11 +18,12 @@ class Data_Configs_RandLA:
                  'table', 'chair', 'sofa', 'bookcase', 'board', 'clutter']
     sem_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
+    sub_grid_size = 0.04
     points_cc = 9
     sem_num = len(sem_names)
-    ins_max_num = 24
-    train_pts_num = 4096
-    test_pts_num = 4096
+    ins_max_num = 28
+    noise_init = 3.5
+    n_pts = 20480
     num_layers = 5
     k_n = 16
     sub_sampling_ratio = [4, 4, 4, 4, 2]
@@ -26,11 +31,12 @@ class Data_Configs_RandLA:
 
 
 class Data_S3DIS:
-    def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4):
+    def __init__(self, dataset_path, train_areas, test_areas, train_batch_size=4, is_train=True):
         # self.batch = Data_Configs_RandLA.train_pts_num // 4096
         self.root_folder_4_traintest = dataset_path
         self.train_files = self.load_full_file_list(areas=train_areas)
         self.test_files = self.load_full_file_list(areas=test_areas)
+        self.all_files = self.train_files + self.test_files
         print('train files:', len(self.train_files))
         print('test files:', len(self.test_files))
 
@@ -44,32 +50,156 @@ class Data_S3DIS:
 
         self.train_next_bat_index = 0
 
+        self.mode = 'training' if is_train else 'validation'
+        self.path = dataset_path
+
+        self.val_split = test_areas[0]
+
+        # Initiate containers
+        # self.val_proj = []
+        # self.val_labels = []
+        self.val_proj = {}
+        self.val_labels = {}
+        # self.possibility = {'training': [], 'validation': []}
+        # self.min_possibility = {'training': [], 'validation': []}
+        # self.input_trees = {'training': [], 'validation': []}
+        # self.input_colors = {'training': [], 'validation': []}
+        # self.input_labels = {'training': [], 'validation': []}
+        # self.sub_ins_labels = {'training': [], 'validation': []}
+        # self.sub_norm_xyz = {'training': [], 'validation': []}
+        # self.input_names = {'training': [], 'validation': []}
+        self.trees = {}
+        self.colors = {}
+        self.labels = {}
+        self.ins_labels = {}
+        self.norm_xyz = {}
+        self.names = {}
+
+        self.data = {'training': [], 'validation': []}
+        self.val_proj = {}
+        self.val_labels = {}
+
+        self.load_sub_sampled_clouds(Data_Configs_RandLA.sub_grid_size, self.mode)
+
+    def load_subsampled_points_batch(self, sub_grid_size, file_path):
+        pass
+
+
+    def load_sub_sampled_clouds(self, sub_grid_size, mode):
+        tree_path = os.path.join(self.path,'input_{:.3f}'.format(sub_grid_size))
+        for i, file_path in enumerate(self.all_files):
+            t0 = time.time()
+            cloud_name = file_path.split('/')[-1]
+            if self.val_split in cloud_name:
+                cloud_split = 'validation'
+            else:
+                cloud_split = 'training'
+
+            # Name of the input files
+            kd_tree_file = os.path.join(tree_path,
+                                        '{:s}_KDTree.pkl'.format(cloud_name))
+            sub_ply_file = os.path.join(tree_path,
+                                        '{:s}.ply'.format(cloud_name))
+
+            data = read_ply(sub_ply_file)
+            sub_colors = np.vstack(
+                (data['red'], data['green'], data['blue'])).T
+            sub_labels = data['class']
+            sub_ins_labels = data['ins_labels']
+            sub_xyz = np.vstack(
+                (data['x'], data['y'], data['z'])).T
+
+            sub_limit = np.vstack(
+                (data['limit_x'], data['limit_y'], data['limit_z'])).T
+
+            norm_xyz = sub_xyz / sub_limit
+
+            # Read pkl with search tree
+            with open(kd_tree_file, 'rb') as f:
+                search_tree = pickle.load(f)
+
+            # self.input_trees[cloud_split] += [search_tree]
+            # self.input_colors[cloud_split] += [sub_colors]
+            # self.input_labels[cloud_split] += [sub_labels]
+            # self.sub_ins_labels[cloud_split] += [sub_ins_labels]
+            # self.input_names[cloud_split] += [cloud_name]
+            # self.sub_norm_xyz[cloud_split] += [norm_xyz]
+
+            self.trees[cloud_name] = [search_tree]
+            self.colors[cloud_name] = [sub_colors]
+            self.labels[cloud_name] = [sub_labels]
+            self.ins_labels[cloud_name] = [sub_ins_labels]
+            self.names[cloud_name] = [cloud_name]
+            self.norm_xyz[cloud_name] = [norm_xyz]
+
+            self.data[cloud_split] += [self.trees]
+            self.data[cloud_split] += [self.colors]
+            self.data[cloud_split] += [self.labels]
+            self.data[cloud_split] += [self.ins_labels]
+            self.data[cloud_split] += [self.names]
+            self.data[cloud_split] += [self.norm_xyz]
+
+
+            size = sub_colors.shape[0] * 4 * 7
+            print('{:s} {:.1f} MB loaded in {:.1f}s'.format(
+                kd_tree_file.split('/')[-1], size * 1e-6,
+                time.time() - t0))
+        print('\nPreparing reprojected indices for testing')
+
+
+        # Get validation and test reprojected indices
+        for i, file_path in enumerate(self.all_files):
+            t0 = time.time()
+            cloud_name = file_path.split('/')[-1][:-5]
+
+            # Validation projection and labels
+            if self.val_split in cloud_name:
+                proj_file = os.path.join(tree_path,file_path+'_proj.pkl')
+                with open(proj_file, 'rb') as f:
+                    proj_idx, labels = pickle.load(f)
+                self.val_proj[file_path] = [proj_idx]
+                self.val_labels[file_path] = [labels]
+                print('{:s} done in {:.1f}s'.format(cloud_name,
+                                                    time.time() - t0))
+
+        # for i, tree in enumerate(self.input_colors[mode]):
+        for i, tree in enumerate(self.data[mode]):
+            self.possibility[mode].append(
+                np.random.rand(tree.data.shape[0]) * 1e-3)  # (0,0.001)
+            self.min_possibility[mode].append(
+                float(np.min(self.possibility[mode][-1])))
+
+
     def load_full_file_list(self, areas):
         all_files = []
         for a in areas:
             print('check area:', a)
             files = sorted(glob.glob(self.root_folder_4_traintest + a + '*.h5'))
             for f in files:
-                fin = h5py.File(f, 'r')
-                coords = fin['coords'][:]
-                semIns_labels = fin['labels'][:].reshape([-1, 2])
-                ins_labels = semIns_labels[:, 1]
-                sem_labels = semIns_labels[:, 0]
-
-                data_valid = True
-                ins_idx = np.unique(ins_labels)
-                for i_i in ins_idx:
-                    if i_i <= -1: continue
-                    sem_labels_tp = sem_labels[ins_labels == i_i]
-                    unique_sem_labels = np.unique(sem_labels_tp)
-                    if len(unique_sem_labels) >= 2:
-                        print('>= 2 sem for an ins:', f)
-                        data_valid = False
-                        break
-                if not data_valid: continue
-                block_num = coords.shape[0]
-                for b in range(block_num):
-                    all_files.append(f + '_' + str(b).zfill(4))
+                a_file = open(f, "rb")
+                blocks = pickle.load(a_file)
+                a_file.close()
+                for name, block in blocks.items():
+                    all_files.append(name)
+                # coords = fin['coords'][:]
+                # semIns_labels = fin['labels'][:].reshape([-1, 2])
+                # ins_labels = semIns_labels[:, 1]
+                # sem_labels = semIns_labels[:, 0]
+                #
+                # data_valid = True
+                # ins_idx = np.unique(ins_labels)
+                # for i_i in ins_idx:
+                #     if i_i <= -1: continue
+                #     sem_labels_tp = sem_labels[ins_labels == i_i]
+                #     unique_sem_labels = np.unique(sem_labels_tp)
+                #     if len(unique_sem_labels) >= 2:
+                #         print('>= 2 sem for an ins:', f)
+                #         data_valid = False
+                #         break
+                # if not data_valid: continue
+                # block_num = coords.shape[0]
+                # for b in range(block_num):
+                #     all_files.append(f + '_' + str(b).zfill(4))
 
         return all_files
 
@@ -326,13 +456,150 @@ class Data_S3DIS:
         self.train_next_bat_index += 1
         return bat_pc, bat_sem_labels, bat_ins_labels, bat_psem_onehot_labels, bat_bbvert_padded_labels, bat_pmask_padded_labels
 
+    def load_train_batch(self):
+
+        bat_files = self.train_files[self.train_next_bat_index *
+                                     self.train_batch_size:(self.train_next_bat_index + 1) * self.train_batch_size]
+        pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [], [], [], [], [], []
+        for i in bat_files:
+            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = self.spatially_regular_gen()
+            pc_xyzrgb.append(pc)
+            sem_labels.append(sem_label)
+            ins_labels.append(ins_label)
+            psem_onehot_labels.append(psem_onehot_label)
+            bbvert_padded_labels.append(bbvert_padded_label)
+            pmask_padded_labels.append(pmask_padded_label)
+        pc_xyzrgb = np.stack(pc_xyzrgb)
+        sem_labels = np.stack(sem_labels)
+        ins_labels = np.stack(ins_labels)
+        psem_onehot_labels = np.stack(psem_onehot_labels)
+        bbvert_padded_labels = np.stack(bbvert_padded_labels)
+        pmask_padded_labels = np.stack(pmask_padded_labels)
+
+        flat_inputs = self.tf_map(pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels,
+                                  pmask_padded_labels)
+
+        num_layers = self.num_layers
+        inputs = {}
+        inputs['xyz'] = []
+        for tmp in flat_inputs[:num_layers]:
+            inputs['xyz'].append((torch.from_numpy(tmp).float()))
+        inputs['neigh_idx'] = []
+        for tmp in flat_inputs[num_layers: 2 * num_layers]:
+            inputs['neigh_idx'].append(torch.from_numpy(tmp).long())
+        inputs['sub_idx'] = []
+        for tmp in flat_inputs[2 * num_layers:3 * num_layers]:
+            inputs['sub_idx'].append(torch.from_numpy(tmp).long())
+        inputs['interp_idx'] = []
+        for tmp in flat_inputs[3 * num_layers:4 * num_layers]:
+            inputs['interp_idx'].append(torch.from_numpy(tmp).long())
+        inputs['features'] = torch.from_numpy(flat_inputs[4 * num_layers]).transpose(1, 2).float()  # B,C,N
+        inputs['sem_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 1]).long()
+        inputs['ins_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 2]).long()
+        inputs['psem_onehot_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 3]).int()
+        inputs['bbvert_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 4]).float()
+        inputs['pmask_padded_labels'] = torch.from_numpy(flat_inputs[4 * num_layers + 5]).float()
+
+        self.train_next_bat_index += 1
+        return inputs
+
+
+
+    def spatially_regular_gen(self, file_path):
+        # Generator loop
+        # cloud_idx = int(np.argmin(self.min_possibility[self.mode]))
+        # choose the point with the minimum of possibility in the cloud as query point
+        point_ind = np.argmin(self.possibility[self.mode][cloud_idx])
+        # Get all points within the cloud from tree structure
+        points = np.array(self.input_trees[self.mode][cloud_idx].data,
+                          copy=False)
+        # Center point of input region
+        center_point = points[point_ind, :].reshape(1, -1)
+        # Add noise to the center point
+        noise = np.random.normal(scale=Data_Configs_RandLA.noise_init / 10,
+                                 size=center_point.shape)
+        pick_point = center_point + noise.astype(center_point.dtype)
+        # Check if the number of points in the selected cloud is less than the predefined num_points
+        if len(points) < Data_Configs_RandLA.n_pts:
+            # Query all points within the cloud
+            queried_idx = self.input_trees[self.mode][cloud_idx].query(
+                pick_point, k=len(points))[1][0]
+        else:
+            # Query the predefined number of points
+            queried_idx = self.input_trees[self.mode][cloud_idx].query(
+                pick_point, k=Data_Configs_RandLA.n_pts)[1][0]
+
+        # Shuffle index
+        queried_idx = DataProcessing.shuffle_idx(queried_idx)
+        # Get corresponding points and colors based on the index
+        queried_pc_xyz = points[queried_idx]
+        queried_pc_xyz = queried_pc_xyz - pick_point
+        queried_pc_colors = self.input_colors[
+            self.mode][cloud_idx][queried_idx]
+        queried_pc_labels = self.input_labels[
+            self.mode][cloud_idx][queried_idx]
+        queried_ins_labels = self.sub_ins_labels[
+            self.mode][cloud_idx][queried_idx]
+        norm_xyz = self.sub_norm_xyz[
+            self.mode][cloud_idx][queried_idx]
+
+        # Update the possibility of the selected points
+        dists = np.sum(np.square(
+            (points[queried_idx] - pick_point).astype(np.float32)),
+                       axis=1)
+        delta = np.square(1 - dists / np.max(dists))
+        self.possibility[self.mode][cloud_idx][queried_idx] += delta
+        # self.min_possibility[self.mode][cloud_idx] = float(
+        #     np.min(self.possibility[self.mode][cloud_idx]))
+
+        # up_sampled with replacement
+        if len(points) < Data_Configs_RandLA.n_pts:
+            queried_pc_xyz, queried_pc_colors, queried_idx, queried_pc_labels, queried_ins_labels= \
+                DataProcessing.data_aug_new(queried_pc_xyz, queried_pc_colors, queried_pc_labels, queried_ins_labels, queried_idx, Data_Configs_RandLA.n_pts)
+
+        pc_xyzrgb = np.concatenate([queried_pc_xyz, queried_pc_colors], axis=-1)
+        sem_labels = queried_pc_labels
+        ins_labels = queried_ins_labels
+
+        min_x = np.min(pc_xyzrgb[:, 0])
+        max_x = np.max(pc_xyzrgb[:, 0])
+        min_y = np.min(pc_xyzrgb[:, 1])
+        max_y = np.max(pc_xyzrgb[:, 1])
+        min_z = np.min(pc_xyzrgb[:, 2])
+        max_z = np.max(pc_xyzrgb[:, 2])
+
+        ori_xyz = copy.deepcopy(pc_xyzrgb[:, 0:3])  # reserved for final visualization
+        use_zero_one_center = True
+        if use_zero_one_center:
+            pc_xyzrgb[:, 0:1] = (pc_xyzrgb[:, 0:1] - min_x) / np.maximum((max_x - min_x), 1e-3)
+            pc_xyzrgb[:, 1:2] = (pc_xyzrgb[:, 1:2] - min_y) / np.maximum((max_y - min_y), 1e-3)
+            pc_xyzrgb[:, 2:3] = (pc_xyzrgb[:, 2:3] - min_z) / np.maximum((max_z - min_z), 1e-3)
+
+        pc_xyzrgb = np.concatenate([pc_xyzrgb, norm_xyz], axis=-1)
+        pc_xyzrgb = np.concatenate([pc_xyzrgb, ori_xyz], axis=-1)
+
+        ########
+        sem_labels = sem_labels.reshape([-1])
+        ins_labels = ins_labels.reshape([-1])
+        bbvert_padded_labels, pmask_padded_labels = self.get_bbvert_pmask_labels(pc_xyzrgb, ins_labels)
+
+        # print('max num is : ' + str(np.max(ins_labels)))
+
+        psem_onehot_labels = np.zeros((pc_xyzrgb.shape[0], Data_Configs_RandLA.sem_num), dtype=np.int8)
+        for idx, s in enumerate(sem_labels):
+            if sem_labels[idx] == -1: continue  # invalid points
+            sem_idx = Data_Configs_RandLA.sem_ids.index(s)
+            psem_onehot_labels[idx, sem_idx] = 1
+
+        return pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels
+
+
     def load_train_next_batch_randla(self):
         bat_files = self.train_files[self.train_next_bat_index *
                                      self.train_batch_size:(self.train_next_bat_index + 1) * self.train_batch_size]
         pc_xyzrgb, sem_labels, ins_labels, psem_onehot_labels, bbvert_padded_labels, pmask_padded_labels = [],[],[],[],[],[]
         for i in bat_files:
-            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = \
-                Data_S3DIS.load_fixed_points(i)
+            pc, sem_label, ins_label, psem_onehot_label, bbvert_padded_label, pmask_padded_label = load_subsample_points(i)
             pc_xyzrgb.append(pc)
             sem_labels.append(sem_label)
             ins_labels.append(ins_label)
