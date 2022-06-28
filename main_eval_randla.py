@@ -104,8 +104,8 @@ class Eval_Tools:
                 a_file = open(file_path, "rb")
                 blocks = pickle.load(a_file)
                 a_file.close()
-                ins_labels = []
-                sem_labels = []
+
+
                 for name, block in blocks.items():
                     sub_ply_file = block['sub_ply_file']
                     classes = sub_ply_file['sub_labels']
@@ -114,8 +114,12 @@ class Eval_Tools:
                         classes = classes.squeeze()
                     if len(ins[1])==1:
                         ins = ins.squeeze()
-                    sem_labels += classes
-                    ins_labels += ins
+                    sem_labels.append(classes)
+                    ins_labels.append(ins)
+            if len(ins_labels) != 0:
+                ins_labels = np.hstack(ins_labels)
+            if len(sem_labels) != 0:
+                sem_labels = np.hstack(sem_labels)
 
 
             ins_idx = np.unique(ins_labels)
@@ -135,7 +139,7 @@ class Evaluation:
 
         ####### 3. load data
         from dataset_randla_hz import Data_S3DIS as Data
-        data = Data(dataset_path, train_areas, test_areas)
+        data = Data(dataset_path, train_areas, test_areas, is_train=False)
 
         return data
 
