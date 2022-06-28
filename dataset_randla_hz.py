@@ -505,3 +505,41 @@ class Data_S3DIS:
         self.train_files = train_files_new
         self.train_next_bat_index = 0
         print('train files shuffled!')
+
+
+
+    @staticmethod
+    def vis_data(blocks):
+
+        for name, block in blocks.items():
+            sub_ply_file = block['sub_ply_file']
+            sub_colors = sub_ply_file['sub_colors']
+            sub_labels = sub_ply_file['sub_labels']
+            sub_ins_labels = sub_ply_file['sub_ins_labels']
+            sub_xyz = sub_ply_file['sub_xyz']
+
+            sub_limit = np.vstack(
+                (sub_ply_file['limit_x'], sub_ply_file['limit_y'], sub_ply_file['limit_z'])).T
+
+            norm_xyz = sub_xyz / sub_limit
+
+            # coords = sub_ply_file['sub_xyz']
+            # points = fin['points'][block_id]
+            # semIns_labels = fin['labels'][block_id]
+
+            pc = np.concatenate([sub_xyz, sub_colors, norm_xyz], axis=-1)
+            sem_labels = sub_labels
+            ins_labels = sub_ins_labels
+
+            # if u need to visulize data, uncomment the following lines
+            from helper_data_plot import Plot as Plot
+            Plot.draw_pc(pc)
+            Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=sem_labels, fix_color_num=13)
+            Plot.draw_pc_semins(pc_xyz=pc[:, 0:3], pc_semins=ins_labels)
+
+        return
+
+if __name__ == '__main__':
+
+    f = './Data_S3DIS_test/Area_5_hallway_9.h5'
+    Data_S3DIS.load_raw_data_file_s3dis_block(f)

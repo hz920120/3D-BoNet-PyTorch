@@ -71,9 +71,9 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = '/media/cesc/CESC/data/h5/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size = 4
+    batch_size = 2
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
@@ -114,9 +114,9 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
-    lr_backbone = 0.01
+    lr_backbone = 0.005
     lr_bbox = 0.0005
-    lr_pmask = 0.005
+    lr_pmask = 0.0005
     optim_params = [
         {'params': backbone.parameters(), 'lr': lr_backbone, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
         {'params': bbox_net.parameters(), 'lr': lr_bbox, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
@@ -253,12 +253,12 @@ if __name__ == '__main__':
             }
             torch.save(params, PATH)
             print("saving model successfully : ", datetime.now().strftime("%H:%M:%S"))
-            if ep != 100:
+            # if ep != 100:
+            #     continue
+            if ep < 10:
                 continue
-            # if ep < 10:
-            #     continue
-            # if ep % 3 != 0:
-            #     continue
+            if ep % 3 != 0:
+                continue
             result_path = './train_evaluate/' + today.strftime('%Y%m%d') + '/' + test_areas[0] + '/'
             print(result_path)
             last_valid_mPre = 0
