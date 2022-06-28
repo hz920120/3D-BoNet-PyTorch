@@ -118,13 +118,16 @@ if __name__ == '__main__':
         colors = pc_label[:, 3:6].astype(np.uint8)
         labels = pc_label[:, 6].astype(np.uint8)
         ins_labels = pc_label[:, 7].astype(np.uint8)
-
+        index = np.arange(0, len(labels)).astype(np.uint8)
         sub_data_list = []
-        sub_xyz, sub_colors, sub_labels, sub_ins_labels = DP.grid_sub_sampling(xyz, colors, labels, ins_labels,
-                                                                               sub_grid_size)
+        # sub_xyz, sub_colors, sub_labels, sub_ins_labels = DP.grid_sub_sampling(xyz, colors, labels, ins_labels,
+        #                                                                        sub_grid_size)
+        sub_xyz, sub_colors, sub_index, _ = DP.grid_sub_sampling(xyz, colors, index, ins_labels, sub_grid_size)
 
+        sub_labels = labels[sub_index.ravel()]
+        sub_ins_labels = ins_labels[sub_index.ravel()]
 
-        cloud = np.concatenate([sub_xyz, sub_colors, sub_labels, sub_ins_labels], 1)
+        cloud = np.concatenate([sub_xyz, sub_colors, np.reshape(sub_labels, (-1, 1)), np.reshape(sub_ins_labels, (-1, 1))], 1)
 
 
 
