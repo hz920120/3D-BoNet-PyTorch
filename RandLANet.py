@@ -16,7 +16,7 @@ class RandLA(nn.Module):
         self.d_out = d_out
         self.class_weights = DP.get_class_weights('S3DIS')
 
-        self.fc0 = pt_utils.Conv1d(12, 8, kernel_size=1, bn=True)
+        self.fc0 = pt_utils.Conv1d(6, 8, kernel_size=1, bn=True)
         # self.fc0 = pt_utils.Conv1d(12, 8, kernel_size=1, bn=True)
 
         self.dilated_res_blocks = nn.ModuleList()
@@ -50,8 +50,8 @@ class RandLA(nn.Module):
 
     def forward(self, end_points, device):
 
-        # features = end_points['features'][:, 0:6].to(device)  # B,12,N
-        features = end_points['features'].to(device)  # B,12,N
+        features = end_points['features'][:, 0:6].to(device)  # B,12,N
+        # features = end_points['features'].to(device)  # B,12,N
         features = self.fc0(features)  # B,8,N
 
         features = features.unsqueeze(dim=3)  # Batch*channel*npoints*1
