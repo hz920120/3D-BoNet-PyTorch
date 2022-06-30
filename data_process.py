@@ -3,8 +3,8 @@ import numpy as np
 import colorsys, random, os, sys
 import pandas as pd
 
-import Utils.cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling # It is very difficult compile in Windows system.
-import Utils.nearest_neighbors.lib.python.nearest_neighbors as nearest_neighbors
+import utils.cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling # It is very difficult compile in Windows system.
+import utils.nearest_neighbors.lib.python.nearest_neighbors as nearest_neighbors
 
 
 class DataProcessing:
