@@ -71,9 +71,9 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = '/media/cesc/CESC/data/h5/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
-    batch_size = 2
+    batch_size = 4
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
 
     # train(net, data)
@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
-    lr_backbone = 0.005
+    lr_backbone = 0.0005
     lr_bbox = 0.0005
     lr_pmask = 0.0005
     optim_params = [
@@ -143,8 +143,8 @@ if __name__ == '__main__':
     for ep in range(epoch + 1, epoch + 100, 1):
         for g in optimizer.param_groups:
             if g['name'] == 'backbone':
-                lr = lr_backbone * (0.95 ** ep)
-                # lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
+                # lr = lr_backbone * (0.95 ** ep)
+                lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
             elif g['name'] == 'bbox_net':
                 lr = max(lr_bbox / (2 ** (ep // 20)), 0.00001)
             else:

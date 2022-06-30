@@ -5,11 +5,13 @@ import scipy.io
 import torch
 import glob
 import h5py, sys
+from datetime import datetime
 import torch.nn as nn
 import torch.nn.functional as F
 import math
 import copy
 
+from dataset_randla_hz import Data_Configs_RandLA
 from helper_net import Ops
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +30,19 @@ class Eval_Tools:
         return scene_list_dic
 
     @staticmethod
+    def get_scenes(res_blocks_list):
+        scene_list_dic = {}
+        for list in res_blocks_list:
+            for b in list:
+                scene_name = b.split('/')[-1][0:-len('_0000')]
+                if scene_name not in scene_list_dic: scene_list_dic[scene_name] = []
+                scene_list_dic[scene_name].append(b)
+            if len(scene_list_dic) == 0:
+                print('scene len is 0, error!');
+                exit()
+        return scene_list_dic
+
+    @staticmethod
     def get_sem_for_ins(ins_by_pts, sem_by_pts):
         ins_cls_dic = {}
         ins_idx, cnt = np.unique(ins_by_pts, return_counts=True)
@@ -40,15 +55,20 @@ class Eval_Tools:
 
     @staticmethod
     def BlockMerging(volume, volume_seg, pts, grouplabel, groupseg, gap=1e-3):
+        # 参数groupseg应当传入pred的label
+
         overlapgroupcounts = np.zeros([100, 1000])
         groupcounts = np.ones(100)
+        # normalised points 恢复到原始模型
         x = (pts[:, 0] / gap).astype(np.int32)
         y = (pts[:, 1] / gap).astype(np.int32)
         z = (pts[:, 2] / gap).astype(np.int32)
         for i in range(pts.shape[0]):
+            # 取出每一个点的xyz坐标
             xx = x[i]
             yy = y[i]
             zz = z[i]
+
             if grouplabel[i] != -1:
                 if volume[xx, yy, zz] != -1 and volume_seg[xx, yy, zz] == groupseg[grouplabel[i]]:
                     overlapgroupcounts[grouplabel[i], volume[xx, yy, zz]] += 1
@@ -72,7 +92,8 @@ class Eval_Tools:
 
     @staticmethod
     def get_mean_insSize_by_sem(dataset_path, train_areas):
-        from helper_data_s3dis import Data_Configs as Data_Configs
+        # 获取13个sem每个sem下边instance的平均大小（point数量）？？
+        from dataset_randla_hz import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
 
         mean_insSize_by_sem = {}
@@ -103,7 +124,7 @@ class Evaluation:
     def load_data(dataset_path, train_areas, test_areas):
 
         ####### 3. load data
-        from helper_data_s3dis import Data_S3DIS as Data
+        from dataset_randla_hz import Data_S3DIS as Data
         data = Data(dataset_path, train_areas, test_areas)
 
         return data
@@ -113,14 +134,18 @@ class Evaluation:
     def ttest(data, result_path, test_batch_size=1, MODEL_PATH=None):
         # parameter
         # load trained model
-        from BoNetMLP import backbone_pointnet2, pmask_net, bbox_net, Hungarian
+        from BoNetMLP import pmask_net, bbox_net
+        from RandLANet import RandLA
         # date = '20200620_085341_Area_5'
         # epoch_num = '075'
         # MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/2022022800')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         checkpoint = torch.load(MODEL_PATH)
-        backbone_pointnet2 = backbone_pointnet2(is_train=False).cuda()
-        backbone_pointnet2.load_state_dict(checkpoint['backbone_state_dict'])
-        backbone_pointnet2 = backbone_pointnet2.eval()
+        # backbone_pointnet2 = RandLA(is_train=False).cuda()
+        config = Data_Configs_RandLA()
+        backbone_RandLA = RandLA(num_layers=config.num_layers, d_out=config.d_out, num_classes=config.sem_num).cuda()
+        backbone_RandLA.load_state_dict(checkpoint['backbone_state_dict'])
+        backbone_RandLA = backbone_RandLA.eval()
 
         pmask_net = pmask_net().cuda()
         pmask_net.load_state_dict(checkpoint['pmask_state_dict'])
@@ -142,14 +167,13 @@ class Evaluation:
             scene_files = scene_list_dic[scene_name]
             for k in range(0, len(scene_files), test_batch_size):
                 t_files = scene_files[k: k + test_batch_size]
-                bat_pc, bat_sem_gt, bat_ins_gt, bat_psem_onehot, bat_bbvert, bat_pmask, bat_files = \
-                    data.load_test_next_batch_sq(bat_files=t_files)
+                batchdata_test = \
+                    data.load_test_next_batch_sq_randla(bat_files=t_files)
+                bat_sem_gt = batchdata_test['sem_labels']
+                bat_ins_gt = batchdata_test['ins_labels']
+                bat_pc = batchdata_test['features'].to(device).permute(0, 2, 1).contiguous()
 
-                if torch.cuda.is_available():
-                    bat_pc, bat_bbvert, bat_pmask, bat_psem_onehot = \
-                        torch.tensor(bat_pc, device=torch.device('cuda')), torch.tensor(bat_bbvert, device=torch.device('cuda')), torch.tensor(bat_pmask).cuda(), torch.tensor(bat_psem_onehot).cuda()
-
-                point_features, global_features, y_psem_pred_sq_raw, _ = backbone_pointnet2(bat_pc[:, :, 0:9])
+                point_features, global_features, y_psem_pred_sq_raw, _ = backbone_RandLA(batchdata_test, device)
 
                 y_bbvert_pred_sq_raw, y_bbscore_pred_sq_raw = bbox_net(global_features)
 
@@ -176,9 +200,10 @@ class Evaluation:
             scipy.io.savemat(result_path + 'res_by_scene/' + scene_name + '.mat', scene_result, do_compression=True)
 
     @staticmethod
-    def evaluation(dataset_path, train_areas, result_path, writer=None, ep=None):
-        from helper_data_s3dis import Data_Configs as Data_Configs
+    def evaluation(dataset_path: object, train_areas: object, result_path: object, writer: object = None, ep: object = None) -> object:
+        from dataset_randla_hz import Data_Configs_RandLA as Data_Configs
         configs = Data_Configs()
+        # 获取13个sem每个sem下边instance的平均大小（point数量）？？
         mean_insSize_by_sem = Eval_Tools.get_mean_insSize_by_sem(dataset_path, train_areas)
 
         TP_FP_Total = {}
@@ -188,18 +213,18 @@ class Evaluation:
             TP_FP_Total[sem_id]['FP'] = 0
             TP_FP_Total[sem_id]['Total'] = 0
 
-        res_scenes = sorted(os.listdir(result_path + 'res_by_scene/'))
+        res_scenes = sorted(os.listdir(result_path))
         for scene_name in res_scenes:
             print('eval scene', scene_name)
-            scene_result = scipy.io.loadmat(result_path + 'res_by_scene/' + scene_name,
+            scene_result = scipy.io.loadmat(result_path + '/' + scene_name,
                                             verify_compressed_data_integrity=False)
 
             # point cloud all
-            pc_all = [];
+            pc_all = []
             # ground truth
-            ins_gt_all = [];
+            ins_gt_all = []
             # segment predict all
-            sem_pred_all = [];
+            sem_pred_all = []
             # segment ground truth all
             sem_gt_all = []
             gap = 5e-3
@@ -220,8 +245,9 @@ class Evaluation:
                 sem_pred = np.argmax(sem_pred_raw, axis=-1)
                 pmask_pred = pmask_pred_raw * np.tile(bbscore_pred_raw[:, None], [1, pmask_pred_raw.shape[-1]])
                 ins_pred = np.argmax(pmask_pred, axis=-2)
-                ins_sem_dic = Eval_Tools.get_sem_for_ins(ins_by_pts=ins_pred, sem_by_pts=sem_pred)
-                Eval_Tools.BlockMerging(volume, volume_sem, pc[:, 6:9], ins_pred, ins_sem_dic, gap)
+                #TODO
+                ins_sem_dic = Eval_Tools.get_sem_for_ins(ins_by_pts=ins_gt, sem_by_pts=sem_gt)
+                Eval_Tools.BlockMerging(volume, volume_sem, pc[:, 6:9], ins_gt, ins_sem_dic, gap)
 
                 pc_all.append(pc)
                 ins_gt_all.append(ins_gt)
@@ -254,7 +280,7 @@ class Evaluation:
                 if ins_id <= -1: continue
                 tmp = (ins_pred_all == ins_id)
                 sem = scipy.stats.mode(sem_pred_all[tmp])[0][0]
-                if cn <= 0.3 * mean_insSize_by_sem[sem]: continue  # remove small instances
+                if cn <= 0.225 * mean_insSize_by_sem[sem]: continue  # remove small instances
                 ins_pred_by_sem[sem].append(tmp)
             # gt ins
             ins_gt_by_sem = {}
@@ -312,11 +338,18 @@ class Evaluation:
             writer.add_scalar('valid_mRec', round(np.mean(rec_all), 4), ep)
             return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
         else:
+            print(round(np.mean(pre_all), 4))
+            print(round(np.mean(rec_all), 4))
             out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
                 round(np.mean(rec_all), 4))
             np.savez_compressed(out_file + '.npz', tp={0, 0})
-            return 0
+            return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
 
+
+def findAllFile(base):
+    for root, ds, fs in os.walk(base):
+        for f in fs:
+            yield f
 
 #######################
 if __name__ == '__main__':
@@ -326,12 +359,23 @@ if __name__ == '__main__':
     dataset_path = './Data_S3DIS/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
-    result_path = './log2_radius/test_res/' + test_areas[0] + '/'
+    mat_dir = './log2_radius/test_res/' + test_areas[0] + '/' + 'res_by_scene'
 
-    os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022061100')
-    # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    PATH = os.path.join(save_model_dir, 'latest_model_44.pt')
-    data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-    Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+
+    print('start eval  ' + datetime.now().strftime("%H:%M:%S"))
+    print(mat_dir)
+    # data = Evaluation.load_data(dataset_path, train_areas, test_areas)
+    # Evaluation.ttest(data, result_path, test_batch_size=1, MODEL_PATH=PATH)
+    valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, mat_dir)  # train_areas is just for a parameter
+    more_lines = ['', str(valid_mPre) + '  ' + str(valid_mRec)]
+    with open('./score/score.txt', 'a') as f:
+        f.writelines('\n'.join(more_lines))
+    print('end eval  ' + datetime.now().strftime("%H:%M:%S"))
+    # modify path
+    # out_put_path = './logs'
+    # torch.save({}, '{}/epoch-{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
+    #                                                             valid_mPre, valid_mRec))
+    # print('{}_area-{}_mPre-{}_mRec-{}'.format(i, test_areas[0],
+    #                                           valid_mPre, valid_mRec))
+
+

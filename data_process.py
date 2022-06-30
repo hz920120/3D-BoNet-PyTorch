@@ -3,8 +3,8 @@ import numpy as np
 import colorsys, random, os, sys
 import pandas as pd
 
-import utils.cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling # It is very difficult compile in Windows system.
-import utils.nearest_neighbors.lib.python.nearest_neighbors as nearest_neighbors
+import Utils.cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling # It is very difficult compile in Windows system.
+import Utils.nearest_neighbors.lib.python.nearest_neighbors as nearest_neighbors
 
 
 class DataProcessing:
@@ -117,8 +117,9 @@ class DataProcessing:
         data_list = data_list[indices]
         return data_list
 
+
     @staticmethod
-    def grid_sub_sampling(points, features=None, labels=None, ins_labels=None, grid_size=0.1, verbose=0):
+    def grid_sub_sampling(points, features=None, labels=None, grid_size=0.1, verbose=0):
         """
         CPP wrapper for a grid sub_sampling (method = barycenter for points and features
         :param points: (N, 3) matrix of input points
@@ -134,10 +135,33 @@ class DataProcessing:
         elif labels is None:
             return cpp_subsampling.compute(points, features=features, sampleDl=grid_size, verbose=verbose)
         elif features is None:
-            return cpp_subsampling.compute(points, classes=labels, ins_labels=ins_labels, sampleDl=grid_size, verbose=verbose)
+            return cpp_subsampling.compute(points, classes=labels, sampleDl=grid_size, verbose=verbose)
         else:
-            return cpp_subsampling.compute(points, features=features, ins_labels=ins_labels, classes=labels, sampleDl=grid_size,
+            return cpp_subsampling.compute(points, features=features, classes=labels, sampleDl=grid_size,
                                            verbose=verbose)
+
+
+    # @staticmethod
+    # def grid_sub_sampling(points, features=None, labels=None, ins_labels=None, grid_size=0.1, verbose=0):
+    #     """
+    #     CPP wrapper for a grid sub_sampling (method = barycenter for points and features
+    #     :param points: (N, 3) matrix of input points
+    #     :param features: optional (N, d) matrix of features (floating number)
+    #     :param labels: optional (N,) matrix of integer labels
+    #     :param grid_size: parameter defining the size of grid voxels
+    #     :param verbose: 1 to display
+    #     :return: sub_sampled points, with features and/or labels depending of the input
+    #     """
+    #
+    #     if (features is None) and (labels is None):
+    #         return cpp_subsampling.compute(points, sampleDl=grid_size, verbose=verbose)
+    #     elif labels is None:
+    #         return cpp_subsampling.compute(points, features=features, sampleDl=grid_size, verbose=verbose)
+    #     elif features is None:
+    #         return cpp_subsampling.compute(points, classes=labels, ins_labels=ins_labels, sampleDl=grid_size, verbose=verbose)
+    #     else:
+    #         return cpp_subsampling.compute(points, features=features, ins_labels=ins_labels, classes=labels, sampleDl=grid_size,
+    #                                        verbose=verbose)
 
     @staticmethod
     def IoU_from_confusions(confusions):
