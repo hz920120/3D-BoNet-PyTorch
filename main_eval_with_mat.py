@@ -227,7 +227,7 @@ class Evaluation:
             sem_pred_all = []
             # segment ground truth all
             sem_gt_all = []
-            gap = 5e-3
+            gap = 6e-3
             volume_num = int(1. / gap) + 2
             volume = -1 * np.ones([volume_num, volume_num, volume_num]).astype(np.int32)
             volume_sem = -1 * np.ones([volume_num, volume_num, volume_num]).astype(np.int32)
@@ -246,8 +246,8 @@ class Evaluation:
                 pmask_pred = pmask_pred_raw * np.tile(bbscore_pred_raw[:, None], [1, pmask_pred_raw.shape[-1]])
                 ins_pred = np.argmax(pmask_pred, axis=-2)
                 #TODO
-                ins_sem_dic = Eval_Tools.get_sem_for_ins(ins_by_pts=ins_gt, sem_by_pts=sem_gt)
-                Eval_Tools.BlockMerging(volume, volume_sem, pc[:, 6:9], ins_gt, ins_sem_dic, gap)
+                ins_sem_dic = Eval_Tools.get_sem_for_ins(ins_by_pts=ins_pred, sem_by_pts=sem_pred)
+                Eval_Tools.BlockMerging(volume, volume_sem, pc[:, 6:9], ins_pred, ins_sem_dic, gap)
 
                 pc_all.append(pc)
                 ins_gt_all.append(ins_gt)
