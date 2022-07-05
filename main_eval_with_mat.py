@@ -245,8 +245,8 @@ class Evaluation:
             ins_pred_all = volume[tuple(pc_xyz_int.T)]
 
             #### if you need to visulize, please uncomment the follow lines
-            # from helper_data_plot import Plot as Plot
-            # Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
+            from helper_data_plot import Plot as Plot
+            Plot.draw_pc(np.concatenate([pc_all[:,9:12], pc_all[:,3:6]], axis=1))
             # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_gt_all)
             # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=ins_pred_all)
             # Plot.draw_pc_semins(pc_xyz=pc_all[:, 9:12], pc_semins=sem_gt_all)

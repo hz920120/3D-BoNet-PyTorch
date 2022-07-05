@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import math
 import copy
 
+from torch.utils.tensorboard import SummaryWriter
+
 from helper_net import Ops
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -331,21 +333,24 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'  ## specify the GPU to use
 
+    writer = SummaryWriter('logs_pointnet')
     dataset_path = './Data_S3DIS/'
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/test')
-    # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    for i in findAllFile(save_model_dir):
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/temp')
+    path_list = os.listdir(save_model_dir)
+    path_list.sort(key=lambda x: int(x.split('latest_model_')[1].split('.pt')[0]))
+    for i in path_list:
         PATH = os.path.join(save_model_dir, i)
         print(i)
+        ep = i.split('latest_model_')[1].split('.pt')[0]
+        print(ep)
         data = Evaluation.load_data(dataset_path, train_areas, test_areas)
         Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-        valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas,
-                                                       result_path)  # train_areas is just for a parameter
+        valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas, result_path, writer=writer, ep=ep)
         # modify path
         out_put_path = './checkpoints/colab_checkpoints'
         torch.save({}, '{}/epoch-{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
