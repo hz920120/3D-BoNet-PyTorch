@@ -29,7 +29,10 @@ if today.hour < 12:
 else:
     h = "12"
 
-LOG_DIR = ''
+is_colab = False
+colab_path = '/content/drive/MyDrive/3dbonet_checkpoints/'
+
+LOG_DIR = '' if not is_colab else colab_path
 save_model_dir = os.path.join(LOG_DIR, 'checkpoints')
 save_model_dir = os.path.join(save_model_dir, today.strftime('%Y%m%d') + h)
 if not os.path.exists(save_model_dir):
@@ -64,7 +67,7 @@ if __name__ == '__main__':
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
     #
-    dataset_path = './Data_S3DIS_bak/'
+    dataset_path = './Data_S3DIS/'
     # data = S3DISDataset(split='train', data_root=dataset_path, transform=None)
     batch_size = 8
     data = Data(dataset_path, train_areas, test_areas, train_batch_size=batch_size)
@@ -77,7 +80,7 @@ if __name__ == '__main__':
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     # train_dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
-    MODEL_PATH = os.path.join(BASE_DIR, 'checkpoints/20220610')
+    MODEL_PATH = os.path.join(BASE_DIR, save_model_dir)
 
     # backbone_pointnet2
     backbone = backbone_pointnet2(is_train=True)
@@ -104,10 +107,13 @@ if __name__ == '__main__':
 
     print('parameters total count : {}'.format(count1 + count2 + count3))
 
+    lr_backbone = 0.0005
+    lr_bbox = 0.0005
+    lr_pmask = 0.0005
     optim_params = [
-        {'params': backbone.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': bbox_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
-        {'params': pmask_net.parameters(), 'lr': 0.0005, 'betas': (0.9, 0.999), 'eps': 1e-08},
+        {'params': backbone.parameters(), 'lr': lr_backbone, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'backbone'},
+        {'params': bbox_net.parameters(), 'lr': lr_bbox, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'bbox_net'},
+        {'params': pmask_net.parameters(), 'lr': lr_pmask, 'betas': (0.9, 0.999), 'eps': 1e-08, 'name': 'pmask_net'},
     ]
     optimizer = optim.Adam(optim_params)
     total_train_batch_num = data.total_train_batch_num
@@ -129,9 +135,14 @@ if __name__ == '__main__':
     print('total train batch num:', total_train_batch_num)
     for ep in range(epoch, epoch + 51, 1):
         for g in optimizer.param_groups:
-            lr = max(0.0005 / (2 ** (ep // 20)), 0.00001)
+            if g['name'] == 'backbone':
+                lr = max(lr_backbone / (2 ** (ep // 20)), 0.00001)
+            elif g['name'] == 'bbox_net':
+                lr = max(lr_bbox / (2 ** (ep // 20)), 0.00001)
+            else:
+                lr = max(lr_pmask / (2 ** (ep // 20)), 0.00001)
             g['lr'] = lr
-            print('ep : {}, lr : {}'.format(ep, lr))
+            print('ep : {},      name : {},     lr : {}'.format(ep, g['name'], lr))
         data.shuffle_train_files(ep)
         total_loss = 0
         for i in range(total_train_batch_num):
@@ -209,13 +220,13 @@ if __name__ == '__main__':
                 sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
                 sum_bbox_vert_loss_iou = writer.add_scalar('bbvert_loss_iou', bbvert_loss_iou, x_axis)
                 sum_bbox_score_loss = writer.add_scalar('bbscore_loss', bbscore_loss, x_axis)
-                sum_total_loss = writer.add_scalar('bbscore_loss', total_loss, x_axis)
-                sum_pmask_loss = writer.add_scalar('bbscore_loss', ms_loss, x_axis)
-                sum_psemce_loss = writer.add_scalar('bbscore_loss', psemce_loss, x_axis)
+                sum_total_loss = writer.add_scalar('total_loss', total_loss, x_axis)
+                sum_pmask_loss = writer.add_scalar('ms_loss', ms_loss, x_axis)
+                sum_psemce_loss = writer.add_scalar('psemce_loss', psemce_loss, x_axis)
                 # torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone', i))
                 # torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net', i))
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
-        if ep % 5 == 0:
+        if ep % 1 == 0:
             print('saving model : ', datetime.now().strftime("%H:%M:%S"))
             torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
             torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
