@@ -312,10 +312,18 @@ class Evaluation:
             writer.add_scalar('valid_mRec', round(np.mean(rec_all), 4), ep)
             return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
         else:
+            print(round(np.mean(pre_all), 4))
+            print(round(np.mean(rec_all), 4))
             out_file = result_path + 'PreRec_mean_' + str(round(np.mean(pre_all), 4)) + '_' + str(
                 round(np.mean(rec_all), 4))
             np.savez_compressed(out_file + '.npz', tp={0, 0})
-            return 0
+            return round(np.mean(pre_all), 4), round(np.mean(rec_all), 4)
+
+
+def findAllFile(base):
+    for root, ds, fs in os.walk(base):
+        for f in fs:
+            yield f
 
 
 #######################
@@ -329,9 +337,18 @@ if __name__ == '__main__':
     result_path = './log2_radius/test_res/' + test_areas[0] + '/'
 
     os.system('rm -rf %s' % (result_path))
-    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/2022061100')
+    save_model_dir = os.path.join(BASE_DIR, 'checkpoints/temp')
     # PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
-    PATH = os.path.join(save_model_dir, 'latest_model_44.pt')
-    data = Evaluation.load_data(dataset_path, train_areas, test_areas)
-    Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
-    Evaluation.evaluation(dataset_path, train_areas, result_path)  # train_areas is just for a parameter
+    for i in findAllFile(save_model_dir):
+        PATH = os.path.join(save_model_dir, i)
+        print(i)
+        data = Evaluation.load_data(dataset_path, train_areas, test_areas)
+        Evaluation.ttest(data, result_path, test_batch_size=4, MODEL_PATH=PATH)
+        valid_mPre, valid_mRec = Evaluation.evaluation(dataset_path, train_areas,
+                                                       result_path)  # train_areas is just for a parameter
+        # modify path
+        out_put_path = './checkpoints/colab_checkpoints'
+        torch.save({}, '{}/epoch-{}_area-{}_mPre-{}_mRec-{}'.format(out_put_path, i, test_areas[0],
+                                                                    valid_mPre, valid_mRec))
+        print('{}_area-{}_mPre-{}_mRec-{}'.format(i, test_areas[0],
+                                                  valid_mPre, valid_mRec))
