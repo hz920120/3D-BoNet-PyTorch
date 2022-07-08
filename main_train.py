@@ -62,7 +62,8 @@ if __name__ == '__main__':
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    writer = SummaryWriter('logs')
+    summary_path = 'logs_old' if not is_colab else os.path.join(colab_path, 'logs_old')
+    writer = SummaryWriter(summary_path)
 
     train_areas = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_6']
     test_areas = ['Area_5']
