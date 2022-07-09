@@ -229,9 +229,6 @@ if __name__ == '__main__':
                 # torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net', i))
         if ep % 1 == 0:
             print('saving model : ', datetime.now().strftime("%H:%M:%S"))
-            torch.save(backbone.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'backbone_out', ep))
-            torch.save(bbox_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'bbox_net_out', ep))
-            torch.save(pmask_net.state_dict(), '%s/%s_%.3d.pth' % (save_model_dir, 'pmask_net_out', ep))
             PATH = os.path.join(BASE_DIR, save_model_dir, 'latest_model_%s.pt' % ep)
             params = {
                 'epoch': ep,
