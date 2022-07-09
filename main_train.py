@@ -215,7 +215,7 @@ if __name__ == '__main__':
                     bbvert_loss, bbscore_loss, ms_loss, psemce_loss
                 ))
                 print("-----------------------------------------------------------")
-                x_axis = epoch * total_train_batch_num + (batch_size * i)
+                x_axis = ep * total_train_batch_num * batch_size + (batch_size * i)
                 sum_bbox_vert_loss = writer.add_scalar('bbvert_loss', bbvert_loss, x_axis)
                 sum_bbox_vert_loss_l2 = writer.add_scalar('bbvert_loss_l2', bbvert_loss_l2, x_axis)
                 sum_bbox_vert_loss_ce = writer.add_scalar('bbvert_loss_ce', bbvert_loss_ce, x_axis)
